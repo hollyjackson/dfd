@@ -166,10 +166,10 @@ def grid_search_opt(gt_aif, defocus_stack_torch, min_Z = 0.1, max_Z = 10, num_Z 
         for j in range(G.shape[0]): # each focal setting
             kernel = G[j]
             for k in range(num_channels):
-                defocus_stack[j,:,:,k] = scipy.ndimage.convolve(gt_aif[:,:,k], kernel, mode='constant')
+                defocus_stack[j,:,:,k] = scipy.ndimage.convolve(gt_aif[:,:,k].cpu().numpy(), kernel, mode='constant')
         
         dpt = torch.full((width,height), Z[i]).to(gt_aif.device)
-        all_losses[:,:,i] = objective_full(dpt, gt_aif, defocus_stack_torch, pred=torch.from_numpy(defocus_stack), beta=beta, proxy=proxy, gamma=gamma, last_dpt=last_dpt)
+        all_losses[:,:,i] = objective_full(dpt, gt_aif, defocus_stack_torch, pred=torch.from_numpy(defocus_stack).to(gt_aif.device), beta=beta, proxy=proxy, gamma=gamma, last_dpt=last_dpt)
 
     argmin_indices = np.argmin(all_losses, axis=2)
     depth_map = Z[argmin_indices]

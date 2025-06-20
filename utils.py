@@ -160,8 +160,8 @@ def load_single_sample(sample='0045', set='train', fs=5, res='half'):
     #     dpt = np.asarray(dpt, dtype=np.float32)
     #     dpt = np.clip(np.asarray(dpt, dtype=np.float32) / 1e4, 0.1, 10)
     #     dpt = cv2.resize(dpt, (640//2, 480//2))
-        
-    dpt = torch.tensor(np.asarray(dpt, dtype=np.float32))# / 1e4
+    # dpt = torch.tensor(np.asarray(dpt, dtype=np.float32))# / 1e4
+    
     dpt = skimage.io.imread(os.path.join(data_path, set+'_depth', img_name)).astype(np.float32)
     dpt /= 1e4  # scale depth values
     dpt = np.clip(dpt, 0.1, 10.0) # optionally clip
@@ -216,48 +216,48 @@ def load_sample_image(fs=5, res='half'):
     img_name = '0045.png'
 
     # si et al.
-    dpt = Image.open(os.path.join(data_path,'test_depth',img_name))
-    dpt = np.asarray(dpt, dtype=np.float32)
-    dpt = np.clip(np.asarray(dpt, dtype=np.float32) / 1e4, 0.1, 10)
-    if res == 'half':
-        dpt = cv2.resize(dpt,(640//2, 480//2))
-    dpt = torch.from_numpy(dpt)
-    
-    # dpt = skimage.io.imread(os.path.join(data_path, 'test_depth', img_name)).astype(np.float32)
-    # dpt /= 1e4  # scale depth values
-    # dpt = np.clip(dpt, 0.1, 10.0) # optionally clip
+    # dpt = Image.open(os.path.join(data_path,'test_depth',img_name))
+    # dpt = np.asarray(dpt, dtype=np.float32)
+    # dpt = np.clip(np.asarray(dpt, dtype=np.float32) / 1e4, 0.1, 10)
     # if res == 'half':
-    #     # resize with anti-aliasing
-    #     dpt = skimage.transform.resize(
-    #         dpt,
-    #         output_shape=(480//2,640//2), # (height, width)
-    #         order=1,                  # bilinear interpolation
-    #         anti_aliasing=True,
-    #         preserve_range=True       # don't normalize to [0, 1]
-    #     )
-    # # convert to torch tensor
+    #     dpt = cv2.resize(dpt,(640//2, 480//2))
     # dpt = torch.from_numpy(dpt)
+    
+    dpt = skimage.io.imread(os.path.join(data_path, 'test_depth', img_name)).astype(np.float32)
+    dpt /= 1e4  # scale depth values
+    dpt = np.clip(dpt, 0.1, 10.0) # optionally clip
+    if res == 'half':
+        # resize with anti-aliasing
+        dpt = skimage.transform.resize(
+            dpt,
+            output_shape=(480//2,640//2), # (height, width)
+            order=1,                  # bilinear interpolation
+            anti_aliasing=True,
+            preserve_range=True       # don't normalize to [0, 1]
+        )
+    # convert to torch tensor
+    dpt = torch.from_numpy(dpt)
 
     # si et al.
-    aif = cv2.cvtColor(cv2.imread(os.path.join(data_path,'test_rgb',img_name)), cv2.COLOR_BGR2RGB)
-    if res == 'half':
-        aif = cv2.resize(aif,(640//2,480//2))
-    aif = torch.from_numpy(aif/255.).type(torch.float32).contiguous()
-
-    # # load RGB image (automatically returns float in [0, 255] if it's uint8)
-    # aif = skimage.io.imread(os.path.join(data_path, 'test_rgb', img_name)).astype(np.float32) / 255.0
-    # print(aif[100,100])
-    # # resize if needed
+    # aif = cv2.cvtColor(cv2.imread(os.path.join(data_path,'test_rgb',img_name)), cv2.COLOR_BGR2RGB)
     # if res == 'half':
-    #     aif = skimage.transform.resize(
-    #         aif,
-    #         output_shape=(480//2,640//2), # (height, width)
-    #         order=1,                  # bilinear interpolation
-    #         anti_aliasing=True,
-    #         preserve_range=True       # keep values in [0, 255] if original was uint8
-    #     )
-    # # convert to torch tensor
-    # aif = torch.from_numpy(aif)
+    #     aif = cv2.resize(aif,(640//2,480//2))
+    # aif = torch.from_numpy(aif/255.).type(torch.float32).contiguous()
+
+    # load RGB image (automatically returns float in [0, 255] if it's uint8)
+    aif = skimage.io.imread(os.path.join(data_path, 'test_rgb', img_name)).astype(np.float32) / 255.0
+    print(aif[100,100])
+    # resize if needed
+    if res == 'half':
+        aif = skimage.transform.resize(
+            aif,
+            output_shape=(480//2,640//2), # (height, width)
+            order=1,                  # bilinear interpolation
+            anti_aliasing=True,
+            preserve_range=True       # keep values in [0, 255] if original was uint8
+        )
+    # convert to torch tensor
+    aif = torch.from_numpy(aif)
     # print('after',aif.min(), aif.max())
     
     files = os.listdir(os.path.join(data_path,'test_fs'+ext))

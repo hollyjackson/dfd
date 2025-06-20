@@ -161,7 +161,8 @@ def coordinate_descent(defocus_stack,  gss_tol = 1e-2, gss_window = 1, ls_maxite
         else:
             if not adaptive_grid:
                 a_b_init = None
-                depth_map, Z, argmin_indices, all_losses = section_search.grid_search(aif, defocus_stack_torch, min_Z=min_Z, max_Z=max_Z, num_Z=num_Z, beta=beta, proxy=dpt_proxy, gamma=gamma, last_dpt=last_dpt)
+                # TODO: change grid search to opt
+                depth_map, Z, argmin_indices, all_losses = section_search.grid_search_opt(aif, defocus_stack_torch, min_Z=min_Z, max_Z=max_Z, num_Z=num_Z, beta=beta, proxy=dpt_proxy, gamma=gamma, last_dpt=last_dpt)
                 
                 if save_plots or show_plots:
                     plt.imshow(depth_map)
