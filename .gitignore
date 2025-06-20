@@ -1,0 +1,7 @@
+results/
+*.png
+experiments/
+__pycache__/
+.ipynb_checkpoints/
+NYUv2/
+pyGCO
