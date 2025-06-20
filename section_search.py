@@ -78,13 +78,14 @@ def objective(Z, i, j, gt_aif, defocus_stack_torch):
     loss = torch.nn.functional.mse_loss(gt, pred)
     return loss.item()
 
-def objective_full(depth_map, gt_aif, defocus_stack_torch, beta=0, proxy=None, gamma=0, last_dpt=None): 
+def objective_full(depth_map, gt_aif, defocus_stack_torch, pred=None, beta=0, proxy=None, gamma=0, last_dpt=None): 
 
     if isinstance(depth_map, np.ndarray):
         depth_map_torch = torch.from_numpy(depth_map).to(defocus_stack_torch.device)
     else:
         depth_map_torch = depth_map
-    pred = forward_model.forward_torch(depth_map_torch, gt_aif)
+    if pred is None:
+        pred = forward_model.forward_torch(depth_map_torch, gt_aif)
     # loss = torch.nn.functional.mse_loss(defocus_stack_torch, pred)
     # return loss.item()
     loss = torch.mean((defocus_stack_torch - pred)**2, dim=(0, -1))
@@ -129,7 +130,7 @@ def grid_search(gt_aif, defocus_stack_torch, min_Z = 0.1, max_Z = 10, num_Z = 10
     for i in tqdm(range(num_Z), desc="Grid search".ljust(20), ncols=80):
         # print(i,'/',num_Z)
         dpt = torch.full((width,height), Z[i]).to(gt_aif.device)
-        defocus_stack = forward_model.forward_torch(dpt, gt_aif, indices=indices)
+        # defocus_stack = forward_model.forward_torch(dpt, gt_aif, indices=indices)
         all_losses[:,:,i] = objective_full(dpt, gt_aif, defocus_stack_torch, beta=beta, proxy=proxy, gamma=gamma, last_dpt=last_dpt)
         # all_losses[:,:,i] = torch.mean((defocus_stack_torch - defocus_stack) ** 2, dim=[0,3]).cpu().numpy()
         # if proxy is not None:
@@ -139,6 +140,43 @@ def grid_search(gt_aif, defocus_stack_torch, min_Z = 0.1, max_Z = 10, num_Z = 10
     depth_map = Z[argmin_indices]
     
     return depth_map, Z, argmin_indices, all_losses
+
+
+
+def grid_search_opt(gt_aif, defocus_stack_torch, min_Z = 0.1, max_Z = 10, num_Z = 100, beta=0, proxy=None, gamma=0, last_dpt=None):
+    # try many values of Z
+    Z = np.linspace(min_Z, max_Z, num_Z)
+
+
+    width, height, num_channels = gt_aif.shape
+    u, v = forward_model.compute_u_v()
+
+    all_losses = np.zeros((width, height, num_Z))
+    # for i in range(num_Z):
+    for i in tqdm(range(num_Z), desc="Grid search".ljust(20), ncols=80):
+        # print(i,'/',num_Z)
+        r = forward_model.computer(torch.tensor([[Z[i]]]), globals.Df).unsqueeze(-1).unsqueeze(-1)
+        # print(r)
+        # print(r.shape, u.shape, v.shape)
+        G, _ = forward_model.computeG(r, u, v)
+        # print(G.shape)
+        # print(G)
+        G = G.squeeze()    
+        defocus_stack = np.zeros((G.shape[0], width, height, num_channels))
+        for j in range(G.shape[0]): # each focal setting
+            kernel = G[j]
+            for k in range(num_channels):
+                defocus_stack[j,:,:,k] = scipy.ndimage.convolve(gt_aif[:,:,k], kernel, mode='constant')
+        
+        dpt = torch.full((width,height), Z[i]).to(gt_aif.device)
+        all_losses[:,:,i] = objective_full(dpt, gt_aif, defocus_stack_torch, pred=torch.from_numpy(defocus_stack), beta=beta, proxy=proxy, gamma=gamma, last_dpt=last_dpt)
+
+    argmin_indices = np.argmin(all_losses, axis=2)
+    depth_map = Z[argmin_indices]
+    
+    return depth_map, Z, argmin_indices, all_losses
+
+
 
 def golden_section_search_nested(Z, argmin_indices, gt_aif, defocus_stack_torch,
     method='brent', window = 2):

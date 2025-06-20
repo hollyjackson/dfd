@@ -86,143 +86,143 @@ def precompute_indices(width, height):#, max_kernel_size = 7):
 
     return u, v, row, col, mask
 
-def forward_si(dpt, aif):
+# def forward_si(dpt, aif):
     
-    r = computer(dpt, globals.Df)
-    # r = r.unsqueeze(-1).unsqueeze(-1)
+#     r = computer(dpt, globals.Df)
+#     # r = r.unsqueeze(-1).unsqueeze(-1)
     
-    width, height, fs = r.shape
+#     width, height, fs = r.shape
 
-    x, y = torch.meshgrid(
-        torch.arange(width),
-        torch.arange(height),
-        indexing='ij')
+#     x, y = torch.meshgrid(
+#         torch.arange(width),
+#         torch.arange(height),
+#         indexing='ij')
 
-    print(r.shape, y.shape, x.shape)
+#     print(r.shape, y.shape, x.shape)
 
-    mid = globals.MAX_KERNEL_SIZE // 2
+#     mid = globals.MAX_KERNEL_SIZE // 2
 
     
-    kernel_sum = torch.zeros((fs, width, height))
-    defocus_stack = torch.zeros((fs, width, height, 3))
-    # for n in range(fs):
-    #     defocus_stack[n] = aif.clone()
+#     kernel_sum = torch.zeros((fs, width, height))
+#     defocus_stack = torch.zeros((fs, width, height, 3))
+#     # for n in range(fs):
+#     #     defocus_stack[n] = aif.clone()
     
-    for n in range(fs):
-        sigma = r[:,:,n].squeeze()
-        mask1 = sigma > 1
-        # kernel_sum[n][sigma <= 1] = 1.
-        for i in range(globals.MAX_KERNEL_SIZE):
-            mask2 = ((x + i - mid) >= 0) & ((x + i - mid) < width)
-            for j in range(globals.MAX_KERNEL_SIZE):
-                mask3 = ((y + j - mid) >= 0) & ((y + j - mid) < height)
-                mask = (mask1 & mask2 & mask3)
-                # compute masked indices
-                sigma_masked = sigma[mask]
-                x_masked = x[mask]
-                y_masked = y[mask]
-                dx = x + i - mid
-                dy = y + j - mid
-                dx_masked = dx[mask]
-                dy_masked = dy[mask]
+#     for n in range(fs):
+#         sigma = r[:,:,n].squeeze()
+#         mask1 = sigma > 1
+#         # kernel_sum[n][sigma <= 1] = 1.
+#         for i in range(globals.MAX_KERNEL_SIZE):
+#             mask2 = ((x + i - mid) >= 0) & ((x + i - mid) < width)
+#             for j in range(globals.MAX_KERNEL_SIZE):
+#                 mask3 = ((y + j - mid) >= 0) & ((y + j - mid) < height)
+#                 mask = (mask1 & mask2 & mask3)
+#                 # compute masked indices
+#                 sigma_masked = sigma[mask]
+#                 x_masked = x[mask]
+#                 y_masked = y[mask]
+#                 dx = x + i - mid
+#                 dy = y + j - mid
+#                 dx_masked = dx[mask]
+#                 dy_masked = dy[mask]
 
-                # value at kernel i-mid, j-mid
-                g = (1.0 / ((sigma_masked+1e-8)**2)) * torch.exp(-2.0 * ((i-mid)**2 + (j-mid)**2) / ((sigma_masked+1e-8)**2))
-                kernel_sum[n,x_masked,y_masked] += g
-                defocus_stack[n,x_masked,y_masked,0] += g * aif[dx_masked,dy_masked,0]
-                defocus_stack[n,x_masked,y_masked,1] += g * aif[dx_masked,dy_masked,1]
-                defocus_stack[n,x_masked,y_masked,2] += g * aif[dx_masked,dy_masked,2]
+#                 # value at kernel i-mid, j-mid
+#                 g = (1.0 / ((sigma_masked+1e-8)**2)) * torch.exp(-2.0 * ((i-mid)**2 + (j-mid)**2) / ((sigma_masked+1e-8)**2))
+#                 kernel_sum[n,x_masked,y_masked] += g
+#                 defocus_stack[n,x_masked,y_masked,0] += g * aif[dx_masked,dy_masked,0]
+#                 defocus_stack[n,x_masked,y_masked,1] += g * aif[dx_masked,dy_masked,1]
+#                 defocus_stack[n,x_masked,y_masked,2] += g * aif[dx_masked,dy_masked,2]
 
-        defocus_stack[n,x[mask1],y[mask1],0] /= kernel_sum[n,x[mask1],y[mask1]]
-        defocus_stack[n,x[mask1],y[mask1],1] /= kernel_sum[n,x[mask1],y[mask1]]
-        defocus_stack[n,x[mask1],y[mask1],2] /= kernel_sum[n,x[mask1],y[mask1]]
+#         defocus_stack[n,x[mask1],y[mask1],0] /= kernel_sum[n,x[mask1],y[mask1]]
+#         defocus_stack[n,x[mask1],y[mask1],1] /= kernel_sum[n,x[mask1],y[mask1]]
+#         defocus_stack[n,x[mask1],y[mask1],2] /= kernel_sum[n,x[mask1],y[mask1]]
 
-        print((~mask).sum(), (mask1).sum())
-        defocus_stack[n,x[~mask1],y[~mask1],0] = aif[x[~mask1],y[~mask1],0]
-        defocus_stack[n,x[~mask1],y[~mask1],1] = aif[x[~mask1],y[~mask1],1]
-        defocus_stack[n,x[~mask1],y[~mask1],2] = aif[x[~mask1],y[~mask1],2]
+#         print((~mask).sum(), (mask1).sum())
+#         defocus_stack[n,x[~mask1],y[~mask1],0] = aif[x[~mask1],y[~mask1],0]
+#         defocus_stack[n,x[~mask1],y[~mask1],1] = aif[x[~mask1],y[~mask1],1]
+#         defocus_stack[n,x[~mask1],y[~mask1],2] = aif[x[~mask1],y[~mask1],2]
     
-    return defocus_stack
+#     return defocus_stack
 
 
-def forward_si_brute_force(dpt, aif):
+# def forward_si_brute_force(dpt, aif):
     
-    r = computer(dpt, globals.Df)
-    # r = r.unsqueeze(-1).unsqueeze(-1)
+#     r = computer(dpt, globals.Df)
+#     # r = r.unsqueeze(-1).unsqueeze(-1)
     
-    width, height, fs = r.squeeze().shape
+#     width, height, fs = r.squeeze().shape
 
-    # y, x = torch.meshgrid(
-    #     torch.arange(width),
-    #     torch.arange(height),
-    #     indexing='ij')
+#     # y, x = torch.meshgrid(
+#     #     torch.arange(width),
+#     #     torch.arange(height),
+#     #     indexing='ij')
 
-    # print(r.shape, y.shape, x.shape)
+#     # print(r.shape, y.shape, x.shape)
 
-    lim = globals.MAX_KERNEL_SIZE // 2
-    mid = globals.MAX_KERNEL_SIZE / 2
+#     lim = globals.MAX_KERNEL_SIZE // 2
+#     mid = globals.MAX_KERNEL_SIZE / 2
     
-    # G = torch.zeros((width, height, fs, globals.MAX_KERNEL_SIZE, globals.MAX_KERNEL_SIZE))
-    # G[:,:,:,lim,lim] = 1
-    kernel_sum = torch.zeros((fs, width, height))
-    defocus_stack = torch.zeros((fs, width, height, 3))
-    for n in range(fs):
-        defocus_stack[n] = aif.clone()
+#     # G = torch.zeros((width, height, fs, globals.MAX_KERNEL_SIZE, globals.MAX_KERNEL_SIZE))
+#     # G[:,:,:,lim,lim] = 1
+#     kernel_sum = torch.zeros((fs, width, height))
+#     defocus_stack = torch.zeros((fs, width, height, 3))
+#     for n in range(fs):
+#         defocus_stack[n] = aif.clone()
 
-    for x in range(width):
-        print(x,'/',width)
-        for y in range(height):
-            for n in range(fs):
-                sigma = r[x,y,n]
-                if (sigma > 1):
-                    for i in range(globals.MAX_KERNEL_SIZE):
-                        if ((x + i - lim) >= 0 and (x + i - lim) < width):
-                            for j in range(globals.MAX_KERNEL_SIZE):
-                                if ((y + j - lim) >= 0 and (y + j - lim) < height):
-                                    g = (1.0 / (sigma * sigma)) * torch.exp(-2.0 * ((i-lim) * (i-lim) + (j-lim) * (j-lim)) / (sigma * sigma))
-                                    kernel_sum[n,x,y] += g
-                                    defocus_stack[n,x,y,0] += g * aif[x+i-lim,y+j-lim,0]
-                                    defocus_stack[n,x,y,1] += g * aif[x+i-lim,y+j-lim,0]
-                                    defocus_stack[n,x,y,2] += g * aif[x+i-lim,y+j-lim,0]
-                else:
-                     kernel_sum[n,x,y] = 1
+#     for x in range(width):
+#         print(x,'/',width)
+#         for y in range(height):
+#             for n in range(fs):
+#                 sigma = r[x,y,n]
+#                 if (sigma > 1):
+#                     for i in range(globals.MAX_KERNEL_SIZE):
+#                         if ((x + i - lim) >= 0 and (x + i - lim) < width):
+#                             for j in range(globals.MAX_KERNEL_SIZE):
+#                                 if ((y + j - lim) >= 0 and (y + j - lim) < height):
+#                                     g = (1.0 / (sigma * sigma)) * torch.exp(-2.0 * ((i-lim) * (i-lim) + (j-lim) * (j-lim)) / (sigma * sigma))
+#                                     kernel_sum[n,x,y] += g
+#                                     defocus_stack[n,x,y,0] += g * aif[x+i-lim,y+j-lim,0]
+#                                     defocus_stack[n,x,y,1] += g * aif[x+i-lim,y+j-lim,0]
+#                                     defocus_stack[n,x,y,2] += g * aif[x+i-lim,y+j-lim,0]
+#                 else:
+#                      kernel_sum[n,x,y] = 1
 
-    for n in range(fs):
-        defocus_stack = defocus_stack / kernel_sum.unsqueeze(-1)
+#     for n in range(fs):
+#         defocus_stack = defocus_stack / kernel_sum.unsqueeze(-1)
     
-    return defocus_stack
+#     return defocus_stack
 
-def computeG_si(r):
-    width, height, fs = r.squeeze().shape
+# def computeG_si(r):
+#     width, height, fs = r.squeeze().shape
     
-    x, y = torch.meshgrid(
-        torch.arange(width),
-        torch.arange(height),
-        indexing='ij')
+#     x, y = torch.meshgrid(
+#         torch.arange(width),
+#         torch.arange(height),
+#         indexing='ij')
 
-    print(r.shape, y.shape, x.shape)
+#     print(r.shape, y.shape, x.shape)
 
-    mid = globals.MAX_KERNEL_SIZE // 2
-    # mid = globals.MAX_KERNEL_SIZE / 2
+#     mid = globals.MAX_KERNEL_SIZE // 2
+#     # mid = globals.MAX_KERNEL_SIZE / 2
     
-    G = torch.zeros((width, height, fs, globals.MAX_KERNEL_SIZE, globals.MAX_KERNEL_SIZE))
-    G[:,:,:,mid,mid] = 1
+#     G = torch.zeros((width, height, fs, globals.MAX_KERNEL_SIZE, globals.MAX_KERNEL_SIZE))
+#     G[:,:,:,mid,mid] = 1
     
-    for n in range(fs):
-        sigma = r[:,:,n].squeeze()
-        mask1 = sigma > 1
-        for i in range(globals.MAX_KERNEL_SIZE):
-            mask2 = ((x + i - mid) >= 0) & ((x + i - mid) < width)
-            for j in range(globals.MAX_KERNEL_SIZE):
-                mask3 = ((y + j - mid) >= 0) & ((y + j - mid) < height)
-                mask = (mask1 & mask2 & mask3)
-                sigma_masked = sigma[mask]
-                G[:,:,n,i,j][mask] = (1.0 / (sigma_masked * sigma_masked)) * torch.exp(-2.0 * ((i-mid) * (i-mid) + (j-mid) * (j-mid)) / (sigma_masked * sigma_masked))
+#     for n in range(fs):
+#         sigma = r[:,:,n].squeeze()
+#         mask1 = sigma > 1
+#         for i in range(globals.MAX_KERNEL_SIZE):
+#             mask2 = ((x + i - mid) >= 0) & ((x + i - mid) < width)
+#             for j in range(globals.MAX_KERNEL_SIZE):
+#                 mask3 = ((y + j - mid) >= 0) & ((y + j - mid) < height)
+#                 mask = (mask1 & mask2 & mask3)
+#                 sigma_masked = sigma[mask]
+#                 G[:,:,n,i,j][mask] = (1.0 / (sigma_masked * sigma_masked)) * torch.exp(-2.0 * ((i-mid) * (i-mid) + (j-mid) * (j-mid)) / (sigma_masked * sigma_masked))
     
-    norm = torch.sum(G, dim=(-2,-1)).unsqueeze(-1).unsqueeze(-1)
-    G /= norm
+#     norm = torch.sum(G, dim=(-2,-1)).unsqueeze(-1).unsqueeze(-1)
+#     G /= norm
 
-    return G, norm
+#     return G, norm
 
 def computer(dpt, Df):
     Df_expanded = Df.view(1, 1, -1).to(dpt.device)
@@ -278,7 +278,7 @@ def computeG(r, u, v, kernel='gaussian'):
 
     # ignore r <= 1
     kernel = torch.zeros((globals.MAX_KERNEL_SIZE, globals.MAX_KERNEL_SIZE), dtype=G.dtype, device=G.device)
-    kernel[globals.MAX_KERNEL_SIZE // 2, globals.MAX_KERNEL_SIZE // 2] = 1
+    kernel[globals.MAX_KERNEL_SIZE // 2, globals.MAX_KERNEL_SIZE // 2] = 1.
     mask3d = (r <= 1).squeeze(-1).squeeze(-1)
     G[mask3d] = kernel
     # print(G[mask3d])
@@ -288,25 +288,25 @@ def computeG(r, u, v, kernel='gaussian'):
     # for i in range(5):
     #     print('kernel:',G[237,110,i])
 
-    # handle edge overflow
+    # handle edge overflow -- THIS IS CAUSING ISSUES w/ COORD DESCENT
     # print(globals.MAX_KERNEL_SIZE // 2)
-    if G.shape[0] > 1 and G.shape[1] > 1:
-        print('doing edge overflow')
-        lim = globals.MAX_KERNEL_SIZE // 2
-        for i in range(lim):
-            if i < G.shape[0]:
-                G[i,:,:,:(lim-i),:] = 0
-            if i < G.shape[1]:
-                G[:,i,:,:,:(lim-i)] = 0
-            if (G.shape[0]-(i+1)) >= 0:
-                G[(G.shape[0]-(i+1)),:,:,(lim+1+i):,:] = 0
-            if (G.shape[1]-(i+1)) >= 0:
-                G[:,(G.shape[1]-(i+1)),:,:,(lim+1+i):] = 0
+    # if G.shape[0] > 1 and G.shape[1] > 1:
+    #     # print('doing edge overflow')
+    #     lim = globals.MAX_KERNEL_SIZE // 2
+    #     for i in range(lim):
+    #         if i < G.shape[0]:
+    #             G[i,:,:,:(lim-i),:] = 0
+    #         if i < G.shape[1]:
+    #             G[:,i,:,:,:(lim-i)] = 0
+    #         if (G.shape[0]-(i+1)) >= 0:
+    #             G[(G.shape[0]-(i+1)),:,:,(lim+1+i):,:] = 0
+    #         if (G.shape[1]-(i+1)) >= 0:
+    #             G[:,(G.shape[1]-(i+1)),:,:,(lim+1+i):] = 0
 
     # print kernel at example point
-    print('kernel at 214, 54')
-    print(G[214,54,0])
-    print('r=',r[214,54,0])
+    # print('kernel at 214, 54')
+    # print(G[214,54,0])
+    # print('r=',r[214,54,0])
 
     # print('after edges')
     # for i in range(5):
@@ -320,8 +320,8 @@ def computeG(r, u, v, kernel='gaussian'):
     # print('G nan?',torch.isnan(G).sum() > 0)
     G = G / (norm+1e-8)
 
-    print('(AFTER NORM) kernel at 214, 54')
-    print(G[214,54,0])
+    # print('(AFTER NORM) kernel at 214, 54')
+    # print(G[214,54,0])
     
     # print('after norm')
     # for i in range(5):
@@ -331,10 +331,10 @@ def computeG(r, u, v, kernel='gaussian'):
 def buildA(dpt, u, v, row, col, mask, use_torch=False, kernel='gaussian', op=None):
     # Find gaussian kernels from given dpt map 
     width, height = dpt.shape
-    print(width, height)
+    # print(width, height)
     r = computer(dpt, globals.Df)
     # print(r[189+25,29+25,:])
-    print('r',r[214,54])
+    # print('r',r[214,54])
     _, _, fs = r.shape
     r = r.unsqueeze(-1).unsqueeze(-1)
     
@@ -434,14 +434,14 @@ def forward_torch(dpt, aif, indices=None, kernel='gaussian', op=None):
 
     defocus_stack = []
 
-    print('aif region')
-    lim = globals.MAX_KERNEL_SIZE //2
-    print('red')
-    print(aif[214-lim:214+lim+1,54-lim:54+lim+1,0])
-    print('green')
-    print(aif[214-lim:214+lim+1,54-lim:54+lim+1,1])
-    print('blue')
-    print(aif[214-lim:214+lim+1,54-lim:54+lim+1,2])
+    # print('aif region')
+    # lim = globals.MAX_KERNEL_SIZE //2
+    # print('red')
+    # print(aif[214-lim:214+lim+1,54-lim:54+lim+1,0])
+    # print('green')
+    # print(aif[214-lim:214+lim+1,54-lim:54+lim+1,1])
+    # print('blue')
+    # print(aif[214-lim:214+lim+1,54-lim:54+lim+1,2])
 
 
     aif_red = aif[:,:,0].flatten().unsqueeze(1).to(dpt.device, dtype=dpt.dtype)

@@ -36,8 +36,8 @@ def trivial_aif_initialization(defocus_stack):
         for j in range(height):
             # choose"sharpest"
             aif[i,j,:] = defocus_stack[np.argmax(sharpness_stack[:,i,j]), i, j, :]
-    plt.imshow(aif / 255.)
-    plt.show()
+    # plt.imshow(aif)
+    # plt.show()
 
     return aif
 
@@ -97,13 +97,16 @@ def mrf_optimization(defocus_stack, lmbda=0.05, sharpness_measure='laplacian'):
 def compute_aif_initialization(defocus_stack, lmbda=0.05, sharpness_measure='laplacian'):
     _, width, height, _ = defocus_stack.shape
 
-    
-    labels = mrf_optimization(defocus_stack, lmbda=lmbda, sharpness_measure=sharpness_measure)
+    # make range from 0 to 255
+    multiplier = 1.
+    if defocus_stack.max() <= 1.5:
+        multiplier = 255.
+    labels = mrf_optimization(defocus_stack*multiplier, lmbda=lmbda, sharpness_measure=sharpness_measure)
     
     rows = np.arange(width)[:, None]
     cols = np.arange(height)
     aif = defocus_stack[labels.reshape((width, height)), rows, cols]
-    plt.imshow(aif / 255.)
-    plt.show()
+    # plt.imshow(aif / 255.)
+    # plt.show()
 
     return aif

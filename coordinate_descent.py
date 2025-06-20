@@ -47,7 +47,7 @@ except ImportError:
 
 
 
-def coordinate_descent(width, height, defocus_stack,  gss_tol = 1e-2, gss_window = 1, ls_maxiter = 100, ls_maxiter_multiplier = None, num_epochs = 25, least_squares_first = True, save_plots = True, show_plots = False, depth_init = None, aif_init = None, dpt_denoising_weight = None, aif_denoising_weight = None, dpt_denoise_delay = 10, experiment_name = 'coord-descent', vmin = 0.7, vmax = 1.9, proxy_opt = False, beta = 1e-3, multiplier = 1.1, remove_outliers = False, diff_thresh = 2, tv_thresh = 0.15, tv_thresh_min = 0.15, tv_thresh_multiplier = None, outlier_patch_type = 'tv', adaptive_grid = False, grid_window = 0.25, gamma = 1e-3, similarity_penalty = False, finite_differences = False, t = None, fd_maxiter = 100, epsilon = 1e-3, min_Z = 0.1, max_Z = 10, num_Z = 100, use_CUDA = True):
+def coordinate_descent(defocus_stack,  gss_tol = 1e-2, gss_window = 1, ls_maxiter = 100, ls_maxiter_multiplier = None, num_epochs = 25, least_squares_first = True, save_plots = True, show_plots = False, depth_init = None, aif_init = None, dpt_denoising_weight = None, aif_denoising_weight = None, dpt_denoise_delay = 10, experiment_name = 'coord-descent', vmin = 0.7, vmax = 1.9, proxy_opt = False, beta = 1e-3, multiplier = 1.1, remove_outliers = False, diff_thresh = 2, tv_thresh = 0.15, tv_thresh_min = 0.15, tv_thresh_multiplier = None, outlier_patch_type = 'tv', adaptive_grid = False, grid_window = 0.25, gamma = 1e-3, similarity_penalty = False, finite_differences = False, t = None, fd_maxiter = 100, epsilon = 1e-3, min_Z = 0.1, max_Z = 10, num_Z = 100, use_CUDA = True):
     assert not (finite_differences and adaptive_grid)
     assert not (finite_differences and similarity_penalty)
 
@@ -61,6 +61,15 @@ def coordinate_descent(width, height, defocus_stack,  gss_tol = 1e-2, gss_window
 
     criterion = torch.nn.MSELoss()
     losses = []
+    
+    width = defocus_stack.shape[1]
+    height = defocus_stack.shape[2]
+    IMAGE_RANGE = 255. # if defocus stack in [0-255]
+    if defocus_stack.max() <= 1.5: # instead in [0-1]
+        IMAGE_RANGE = 1.
+        print('Images in range [0-1]')
+    else:
+        print('Images in range [0-255]')
     # ------------------------------------------------
     
     def generate_AIF(aif, dpt, dpt_proxy, ls_maxiter, iter_folder=None):
@@ -74,7 +83,8 @@ def coordinate_descent(width, height, defocus_stack,  gss_tol = 1e-2, gss_window
         losses.append(loss.item())
         print('Loss:',loss.item(), ', TV:',section_search.total_variation(aif))
         
-        aif = np.clip(aif, 0, 255) # TODO: edit this depending on range used 
+        aif = np.clip(aif, 0, IMAGE_RANGE) # TODO: edit this depending on range used 
+        # aif = np.clip(aif, 0, 1)
         
         
         loss = criterion(forward_model.forward_torch(dpt, torch.from_numpy(aif)), defocus_stack_torch)
@@ -83,7 +93,7 @@ def coordinate_descent(width, height, defocus_stack,  gss_tol = 1e-2, gss_window
         print()
 
         if save_plots or show_plots:
-            plt.imshow(aif / np.max(aif))
+            plt.imshow(aif / IMAGE_RANGE)
             if save_plots:
                 plt.savefig(os.path.join(iter_folder,'least_squares_'+str(i)+'.png'))
             if show_plots:
@@ -98,7 +108,7 @@ def coordinate_descent(width, height, defocus_stack,  gss_tol = 1e-2, gss_window
             print('TV denoising')
             aif = denoise_tv_bregman(aif, weight=aif_denoising_weight)
             if save_plots:
-                plt.imshow(aif / np.max(aif))
+                plt.imshow(aif / IMAGE_RANGE)
                 plt.savefig(os.path.join(iter_folder,'aif_denoise_'+str(i)+'.png'))
                 plt.close()
     
@@ -281,7 +291,7 @@ def coordinate_descent(width, height, defocus_stack,  gss_tol = 1e-2, gss_window
             plt.title('DPT Initialization')
             plt.show()
         else:
-            plt.imshow(aif)# / 255.)
+            plt.imshow(aif/ IMAGE_RANGE)
             plt.title('AIF Initialization')
             plt.show()
 
