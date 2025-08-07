@@ -47,9 +47,10 @@ except ImportError:
 
 
 
-def coordinate_descent(defocus_stack,  gss_tol = 1e-2, gss_window = 1, ls_maxiter = 100, ls_maxiter_multiplier = None, num_epochs = 25, least_squares_first = True, save_plots = True, show_plots = False, depth_init = None, aif_init = None, dpt_denoising_weight = None, aif_denoising_weight = None, dpt_denoise_delay = 10, experiment_name = 'coord-descent', vmin = 0.7, vmax = 1.9, proxy_opt = False, beta = 1e-3, multiplier = 1.1, remove_outliers = False, diff_thresh = 2, tv_thresh = 0.15, tv_thresh_min = 0.15, tv_thresh_multiplier = None, outlier_patch_type = 'tv', adaptive_grid = False, grid_window = 0.25, gamma = 1e-3, similarity_penalty = False, finite_differences = False, t = None, fd_maxiter = 100, epsilon = 1e-3, min_Z = 0.1, max_Z = 10, num_Z = 100, use_CUDA = True):
+def coordinate_descent(defocus_stack,  gss_tol = 1e-2, gss_window = 1, ls_maxiter = 100, ls_maxiter_multiplier = None, num_epochs = 25, least_squares_first = True, save_plots = True, show_plots = False, depth_init = None, aif_init = None, dpt_denoising_weight = None, aif_denoising_weight = None, dpt_denoise_delay = 10, experiment_name = 'coord-descent', vmin = 0.7, vmax = 1.9, proxy_opt = False, beta = 1e-3, multiplier = 1.1, remove_outliers = False, diff_thresh = 2, tv_thresh = 0.15, tv_thresh_min = 0.15, tv_thresh_multiplier = None, outlier_patch_type = 'tv', adaptive_grid = False, grid_window = 0.25, gamma = 1e-3, similarity_penalty = False, finite_differences = False, t = None, fd_maxiter = 100, epsilon = 1e-3, min_Z = 0.1, max_Z = 10, num_Z = 100, use_CUDA = True, aif_method='fista'):
     assert not (finite_differences and adaptive_grid)
     assert not (finite_differences and similarity_penalty)
+    assert aif_method in ['fista', 'ls']
 
     # important initializations ---------------------
     if save_plots:
@@ -76,14 +77,18 @@ def coordinate_descent(defocus_stack,  gss_tol = 1e-2, gss_window = 1, ls_maxite
         # --------------
         # least squares
         # --------------
-        aif = least_squares.least_squares(dpt.cpu(), defocus_stack, maxiter=ls_maxiter)
+        if aif_method == 'ls':
+            aif = least_squares.least_squares(dpt.cpu(), defocus_stack, maxiter=ls_maxiter)
+        else:
+            aif = least_squares.bounded_fista_3d(dpt.cpu(), defocus_stack, IMAGE_RANGE, maxiter=ls_maxiter)
         print('\nAIF result range: [',aif.min(), ',', aif.max(),']')
         
         loss = criterion(forward_model.forward_torch(dpt, torch.from_numpy(aif)), defocus_stack_torch)
         losses.append(loss.item())
         print('Loss:',loss.item(), ', TV:',section_search.total_variation(aif))
-        
-        aif = np.clip(aif, 0, IMAGE_RANGE) # TODO: edit this depending on range used 
+
+        if aif_method == 'ls':
+            aif = np.clip(aif, 0, IMAGE_RANGE) # TODO: edit this depending on range used 
         # aif = np.clip(aif, 0, 1)
         
         
@@ -162,7 +167,7 @@ def coordinate_descent(defocus_stack,  gss_tol = 1e-2, gss_window = 1, ls_maxite
             if not adaptive_grid:
                 a_b_init = None
                 # TODO: change grid search to opt
-                depth_map, Z, argmin_indices, all_losses = section_search.grid_search_opt(aif, defocus_stack_torch, min_Z=min_Z, max_Z=max_Z, num_Z=num_Z, beta=beta, proxy=dpt_proxy, gamma=gamma, last_dpt=last_dpt)
+                depth_map, Z, argmin_indices, all_losses = section_search.grid_search_opt(aif, defocus_stack_torch, min_Z=min_Z, max_Z=max_Z, num_Z=num_Z, beta=beta, proxy=dpt_proxy, gamma=gamma, similarity_penalty=similarity_penalty, last_dpt=last_dpt)
                 
                 if save_plots or show_plots:
                     plt.imshow(depth_map)
@@ -188,7 +193,7 @@ def coordinate_descent(defocus_stack,  gss_tol = 1e-2, gss_window = 1, ls_maxite
     
             
             
-            depth_map_golden = section_search.golden_section_search(Z, argmin_indices, aif, defocus_stack_torch, window=gss_window, tolerance=gss_tol, a_b_init=a_b_init, beta=beta, proxy=dpt_proxy, gamma=gamma, last_dpt=last_dpt)
+            depth_map_golden = section_search.golden_section_search(Z, argmin_indices, aif, defocus_stack_torch, window=gss_window, tolerance=gss_tol, a_b_init=a_b_init, beta=beta, proxy=dpt_proxy, gamma=gamma, similarity_penalty=similarity_penalty, last_dpt=last_dpt)
     
             if save_plots or show_plots:
                 plt.imshow(depth_map_golden, vmin=vmin, vmax=vmax)
@@ -298,9 +303,9 @@ def coordinate_descent(defocus_stack,  gss_tol = 1e-2, gss_window = 1, ls_maxite
 
     
 
-    last_dpt = None
-    if similarity_penalty and least_squares_first:
-        last_dpt = torch.clone(dpt.detach())
+    # last_dpt = None
+    # if similarity_penalty and least_squares_first:
+    last_dpt = torch.clone(dpt.detach())
 
     # coordinate descent
     last_loss = float('inf')
@@ -325,8 +330,8 @@ def coordinate_descent(defocus_stack,  gss_tol = 1e-2, gss_window = 1, ls_maxite
             aif, dpt, dpt_proxy = generate_AIF(aif, dpt, dpt_proxy, ls_maxiter, iter_folder=iter_folder)
 
         beta *= multiplier
-        if similarity_penalty:
-            last_dpt = torch.clone(dpt.detach())
+        # if similarity_penalty:
+        last_dpt = torch.clone(dpt.detach())
 
         if ls_maxiter_multiplier != None:
             ls_maxiter = int(ls_maxiter * ls_maxiter_multiplier)
