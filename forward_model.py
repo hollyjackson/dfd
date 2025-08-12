@@ -249,8 +249,8 @@ def computer(dpt, Df):
     # for i in range(5):
     #     print('example sigma',r[237,110,i].item())
     
-    # r[torch.where(r < 2)] = 2
-    r[torch.where(r < 0.5)] = 0.5
+    r[torch.where(r < 2)] = 2
+    # r[torch.where(r < 0.5)] = 0.5
     # r[torch.where(r < 1)] = 1
     # print('r.shape',r.shape)
     # TODO: si et al has 1 and it just doesnt do anything it seems, like fully ignores out of bounds
@@ -279,9 +279,8 @@ def computeG(r, u, v, kernel='gaussian'):
     # # ignore r <= 1
     # kernel = torch.zeros((globals.MAX_KERNEL_SIZE, globals.MAX_KERNEL_SIZE), dtype=G.dtype, device=G.device)
     # kernel[globals.MAX_KERNEL_SIZE // 2, globals.MAX_KERNEL_SIZE // 2] = 1.
-    # mask3d = (r <= 1).squeeze(-1).squeeze(-1)
+    # mask3d = (r <= 2).squeeze(-1).squeeze(-1)
     # G[mask3d] = kernel
-    # print(G[mask3d])
 
     # TODO: chekc this is working
 
@@ -289,7 +288,7 @@ def computeG(r, u, v, kernel='gaussian'):
     #     print('kernel:',G[237,110,i])
 
     # handle edge overflow -- THIS IS CAUSING ISSUES w/ COORD DESCENT
-    # print(globals.MAX_KERNEL_SIZE // 2)
+    # # print(globals.MAX_KERNEL_SIZE // 2)
     # if G.shape[0] > 1 and G.shape[1] > 1:
     #     # print('doing edge overflow')
     #     lim = globals.MAX_KERNEL_SIZE // 2

@@ -176,6 +176,72 @@ def grid_search_opt(gt_aif, defocus_stack_torch, min_Z = 0.1, max_Z = 10, num_Z 
     
     return depth_map, Z, argmin_indices, all_losses
 
+def k_min_indices_no_overlap(sorted_indices, k, gss_window=1):
+    width, height, num_Z = sorted_indices.shape
+    k_min_indices = np.zeros((width, height, k), dtype=np.int32) - 1
+    k_min_indices[:,:,0] = sorted_indices[:,:,0]
+    
+    # last_z = sorted_indices[:,:,0]
+    kk = np.ones((width, height), dtype=np.int32)
+    
+    for z in range(1, num_Z):
+        # mask = (abs(sorted_indices[:,:,z] - last_z) > gss_window) & (kk < k)
+        mask = kk < k
+        for l in range(k):
+            too_close = (abs(sorted_indices[:,:,z] - k_min_indices[:,:,l]) <= gss_window) & (k_min_indices[:,:,l] >= 0)
+            mask = mask & ~too_close
+        if not np.any(mask):
+            continue
+        i, j = np.where(mask)
+        k_min_indices[i, j, kk[i,j]] = sorted_indices[:,:,z][i, j]
+        # last_z[i, j] = sorted_indices[:,:,z][i,j]
+        kk[i, j] += 1
+        if np.all(kk >= k):
+            break
+
+    assert np.all(k_min_indices >= 0)
+        
+    return k_min_indices
+
+
+
+def grid_search_opt_k(gt_aif, defocus_stack_torch, min_Z = 0.1, max_Z = 10, num_Z = 100, k = 3, beta=0, proxy=None, gamma=0, similarity_penalty=False, last_dpt=None, gss_window=1):
+    # try many values of Z
+    Z = np.linspace(min_Z, max_Z, num_Z)
+
+    width, height, num_channels = gt_aif.shape
+    u, v = forward_model.compute_u_v()
+
+    all_losses = np.zeros((width, height, num_Z))
+    # for i in range(num_Z):
+    for i in tqdm(range(num_Z), desc="Grid search".ljust(20), ncols=80):
+        # print(i,'/',num_Z)
+        r = forward_model.computer(torch.tensor([[Z[i]]]), globals.Df).unsqueeze(-1).unsqueeze(-1)
+        # print(r)
+        # print(r.shape, u.shape, v.shape)
+        G, _ = forward_model.computeG(r, u, v)
+        # print(G.shape)
+        # print(G)
+        G = G.squeeze()    
+        defocus_stack = np.zeros((G.shape[0], width, height, num_channels))
+        for j in range(G.shape[0]): # each focal setting
+            kernel = G[j]
+            for c in range(num_channels):
+                defocus_stack[j,:,:,c] = scipy.ndimage.convolve(gt_aif[:,:,c].cpu().numpy(), kernel, mode='constant')
+        
+        dpt = torch.full((width,height), Z[i]).to(gt_aif.device)
+        all_losses[:,:,i] = objective_full(dpt, gt_aif, defocus_stack_torch, pred=torch.from_numpy(defocus_stack).to(gt_aif.device), beta=beta, proxy=proxy, gamma=gamma, similarity_penalty=similarity_penalty, last_dpt=last_dpt)
+
+    sorted_indices = np.argsort(all_losses, axis=2)
+    k_min_indices = sorted_indices[:,:,:k] # axis = 2
+    # k_min_indices = k_min_indices_no_overlap(sorted_indices, k, gss_window=gss_window)
+    # print(k_min_indices.shape)
+    
+    depth_maps = Z[k_min_indices]
+    print(k_min_indices.shape, depth_maps.shape)
+    
+    return depth_maps, Z, k_min_indices, all_losses
+
 
 
 def golden_section_search_nested(Z, argmin_indices, gt_aif, defocus_stack_torch,
@@ -378,12 +444,12 @@ def golden_section_search(Z, argmin_indices, gt_aif, defocus_stack_torch,
 
     dpt = (b + a) / 2
 
-    mse = objective_full(dpt, gt_aif, defocus_stack_torch, beta=beta, proxy=proxy, gamma=0, similarity_penalty=False, last_dpt=None)
-    last_mse = objective_full(last_dpt, gt_aif, defocus_stack_torch, beta=beta, proxy=proxy, gamma=0, similarity_penalty=False, last_dpt=None)
+    if last_dpt is not None:
+        mse = objective_full(dpt, gt_aif, defocus_stack_torch, beta=beta, proxy=proxy, gamma=0, similarity_penalty=False, last_dpt=None)
+        last_mse = objective_full(last_dpt, gt_aif, defocus_stack_torch, beta=beta, proxy=proxy, gamma=0, similarity_penalty=False, last_dpt=None)
+        dpt = np.where(mse <= last_mse, dpt, last_dpt)
 
-    print(mse.shape, last_mse.shape)
-
-    return np.where(mse <= last_mse, dpt, last_dpt)
+    return dpt
     
 
 

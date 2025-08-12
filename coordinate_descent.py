@@ -47,7 +47,7 @@ except ImportError:
 
 
 
-def coordinate_descent(defocus_stack,  gss_tol = 1e-2, gss_window = 1, ls_maxiter = 100, ls_maxiter_multiplier = None, num_epochs = 25, least_squares_first = True, save_plots = True, show_plots = False, depth_init = None, aif_init = None, dpt_denoising_weight = None, aif_denoising_weight = None, dpt_denoise_delay = 10, experiment_name = 'coord-descent', vmin = 0.7, vmax = 1.9, proxy_opt = False, beta = 1e-3, multiplier = 1.1, remove_outliers = False, diff_thresh = 2, tv_thresh = 0.15, tv_thresh_min = 0.15, tv_thresh_multiplier = None, outlier_patch_type = 'tv', adaptive_grid = False, grid_window = 0.25, gamma = 1e-3, similarity_penalty = False, finite_differences = False, t = None, fd_maxiter = 100, epsilon = 1e-3, min_Z = 0.1, max_Z = 10, num_Z = 100, use_CUDA = True, aif_method='fista'):
+def coordinate_descent(defocus_stack,  gss_tol = 1e-2, gss_window = 1, ls_maxiter = 100, ls_maxiter_multiplier = None, num_epochs = 25, least_squares_first = True, save_plots = True, show_plots = False, depth_init = None, aif_init = None, dpt_denoising_weight = None, aif_denoising_weight = None, dpt_denoise_delay = 10, experiment_name = 'coord-descent', vmin = 0.7, vmax = 1.9, proxy_opt = False, beta = 1e-3, multiplier = 1.1, remove_outliers = False, diff_thresh = 2, tv_thresh = 0.15, tv_thresh_min = 0.15, tv_thresh_multiplier = None, outlier_patch_type = 'tv', adaptive_grid = False, grid_window = 0.25, gamma = 1e-3, similarity_penalty = False, finite_differences = False, t = None, fd_maxiter = 100, epsilon = 1e-3, min_Z = 0.1, max_Z = 10, num_Z = 100, k = 1, use_CUDA = True, aif_method='fista'):
     assert not (finite_differences and adaptive_grid)
     assert not (finite_differences and similarity_penalty)
     assert aif_method in ['fista', 'ls']
@@ -167,22 +167,27 @@ def coordinate_descent(defocus_stack,  gss_tol = 1e-2, gss_window = 1, ls_maxite
             if not adaptive_grid:
                 a_b_init = None
                 # TODO: change grid search to opt
-                depth_map, Z, argmin_indices, all_losses = section_search.grid_search_opt(aif, defocus_stack_torch, min_Z=min_Z, max_Z=max_Z, num_Z=num_Z, beta=beta, proxy=dpt_proxy, gamma=gamma, similarity_penalty=similarity_penalty, last_dpt=last_dpt)
+                # if k > 1:
+                depth_maps, Z, k_min_indices, all_losses = section_search.grid_search_opt_k(aif, defocus_stack_torch, min_Z=min_Z, max_Z=max_Z, num_Z=num_Z, k=k, beta=beta, proxy=dpt_proxy, gamma=gamma, similarity_penalty=similarity_penalty, last_dpt=last_dpt, gss_window=gss_window)
+                # else:    
+                #     depth_map, Z, argmin_indices, all_losses = section_search.grid_search_opt(aif, defocus_stack_torch, min_Z=min_Z, max_Z=max_Z, num_Z=num_Z, beta=beta, proxy=dpt_proxy, gamma=gamma, similarity_penalty=similarity_penalty, last_dpt=last_dpt)
                 
                 if save_plots or show_plots:
-                    plt.imshow(depth_map)
-                    plt.colorbar()
-                    if save_plots:
-                        plt.savefig(os.path.join(iter_folder,'grid_search_'+str(i)+'.png'))
-                    if show_plots:
-                        plt.show()
-                    else:
-                        plt.close()
-                    
-                loss = criterion(forward_model.forward_torch(torch.from_numpy(depth_map).to(aif.device), aif), defocus_stack_torch)
-                losses.append(loss.item())
-                print('Loss:',loss.item())
-                print()
+                    for kk in range(k):
+                        plt.imshow(depth_maps[:,:,kk])
+                        plt.colorbar()
+                        if save_plots:
+                            plt.savefig(os.path.join(iter_folder,'grid_search_'+str(i)+'_'+str(kk)+'.png'))
+                        if show_plots:
+                            plt.show()
+                        else:
+                            plt.close()
+
+                # # Grid search loss 
+                # loss = criterion(forward_model.forward_torch(torch.from_numpy(depth_map).to(aif.device), aif), defocus_stack_torch)
+                # losses.append(loss.item())
+                # print('Loss:',loss.item())
+                # print()
             else:
                 # set the a_b_init
                 a = np.maximum(dpt.detach().cpu().numpy().copy() - grid_window, 0)
@@ -192,8 +197,20 @@ def coordinate_descent(defocus_stack,  gss_tol = 1e-2, gss_window = 1, ls_maxite
                 a_b_init = (a, b)
     
             
-            
-            depth_map_golden = section_search.golden_section_search(Z, argmin_indices, aif, defocus_stack_torch, window=gss_window, tolerance=gss_tol, a_b_init=a_b_init, beta=beta, proxy=dpt_proxy, gamma=gamma, similarity_penalty=similarity_penalty, last_dpt=last_dpt)
+            # GSS
+            last_depth_map_golden = None
+            for kk in range(k):
+                depth_map_golden = section_search.golden_section_search(Z, k_min_indices[:,:,kk], aif, defocus_stack_torch, window=gss_window, tolerance=gss_tol, a_b_init=a_b_init, beta=beta, proxy=dpt_proxy, gamma=gamma, similarity_penalty=similarity_penalty, last_dpt=last_dpt)
+                # chose which is better 
+                if last_depth_map_golden is None:
+                    last_depth_map_golden = depth_map_golden
+                else:
+                    mse = section_search.objective_full(depth_map_golden, aif, defocus_stack_torch, beta=beta, proxy=dpt_proxy, gamma=0, similarity_penalty=False, last_dpt=None)
+                    last_mse = section_search.objective_full(last_depth_map_golden, aif, defocus_stack_torch, beta=beta, proxy=dpt_proxy, gamma=0, similarity_penalty=False, last_dpt=None)
+                    last_depth_map_golden = np.where(mse <= last_mse, depth_map_golden, last_depth_map_golden)
+                    
+            # if last_depth_map_golden is not None:
+            depth_map_golden = last_depth_map_golden
     
             if save_plots or show_plots:
                 plt.imshow(depth_map_golden, vmin=vmin, vmax=vmax)
@@ -303,9 +320,9 @@ def coordinate_descent(defocus_stack,  gss_tol = 1e-2, gss_window = 1, ls_maxite
 
     
 
-    # last_dpt = None
-    # if similarity_penalty and least_squares_first:
-    last_dpt = torch.clone(dpt.detach())
+    last_dpt = None
+    if similarity_penalty and least_squares_first:
+        last_dpt = torch.clone(dpt.detach())
 
     # coordinate descent
     last_loss = float('inf')

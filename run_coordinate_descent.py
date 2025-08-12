@@ -69,7 +69,8 @@ def aif_initialization(defocus_stack):
 
     return aif_init
 
-def coord_descent(defocus_stack, least_squares_first = True, depth_init = 1, aif_init = None, vmin = 0.1, vmax = 10):
+def coord_descent(defocus_stack, least_squares_first = True, depth_init = 1, aif_init = None,
+                  vmin = 0.1, vmax = 10):
     # -------------------
     # COORDINATE DESCENT
     # -------------------
@@ -78,8 +79,9 @@ def coord_descent(defocus_stack, least_squares_first = True, depth_init = 1, aif
                                                      save_plots=True, experiment_name = EXPERIMENT_NAME, 
                                                         num_epochs=40,
                                                      least_squares_first=least_squares_first, depth_init=depth_init,
-                                                     aif_init=aif_init, finite_differences=False, num_Z=100, 
-                                                     ls_maxiter=50, ls_maxiter_multiplier=1.05,#1.075, 
+                                                     aif_init=aif_init, 
+                                                        k = 5, aif_method='fista', finite_differences=False, num_Z=100, 
+                                                     ls_maxiter=200, ls_maxiter_multiplier=1.05,#1.075, 
                                                      use_CUDA=False, vmin = vmin, vmax = vmax)
 
     return dpt, aif
@@ -101,7 +103,7 @@ def main():
 
     # coord descent
     dpt, aif = coord_descent(defocus_stack, vmin=gt_dpt.min(), vmax=gt_dpt.max(),
-                             depth_init=9)
+                             depth_init=1)
 
 if __name__ == "__main__":
     main()
