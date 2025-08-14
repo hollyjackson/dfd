@@ -361,3 +361,29 @@ def kernel_size_heuristic(width, height):
     if size % 2 == 0:
         return size + 1
     return size
+
+
+def plot_grid_search_on_pixel(i, j, Z, all_losses, gt_dpt=None):
+
+    plt.figure(figsize=(10,5))
+
+    plt.plot(Z, all_losses[i, j, :], label='Loss Curve',
+            linestyle='-', marker='.', markersize=4, color='black')
+
+    if gt_dpt is not None:
+        plt.scatter([gt_dpt[i,j]], [0],
+                color='red', marker='x', s=100, label='Ground Truth Depth')
+            
+    min_loss_idx = np.argmin(all_losses[i,j])
+    plt.scatter([Z[min_loss_idx]], [all_losses[i,j,min_loss_idx]], 
+            color='green', marker='x', s=100, label='Depth with Min Loss')
+    
+    plt.xticks(Z[::2], labels=np.round(Z[::2], 2), rotation=45)
+    plt.xlabel('Depth (m)')
+    plt.ylabel('MSE between Predicted and Ground Truth Defocus Stack')
+    plt.title(f'Pixel at {(i, j)}')
+    
+    plt.legend()
+    
+    plt.tight_layout()
+    plt.show()

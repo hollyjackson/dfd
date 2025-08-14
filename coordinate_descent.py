@@ -18,34 +18,7 @@ try:
 except ImportError:
     # skimage < 0.12
     from skimage.filters import denoise_tv_bregman, denoise_tv_chambolle
-
-# def isotropic_tv_derivative(image, epsilon=1e-8):
-#     m, n = image.shape
-#     grad = np.zeros_like(image)
-#     dx = np.zeros_like(image)
-#     dy = np.zeros_like(image)
     
-#     dx[:, :-1] = image[:, 1:] - image[:, :-1]
-#     dy[:-1, :] = image[1:, :] - image[:-1, :]
-#     magnitude = np.sqrt(dx**2 + dy**2 + epsilon)
-
-#     grad[:, :-1] += dx[:, :-1] / magnitude[:, :-1]
-#     grad[:-1, :] += dy[:-1, :] / magnitude[:-1, :]
-#     grad[:, 1:] -= dx[:, :-1] / magnitude[:, :-1]
-#     grad[1:, :] -= dy[:-1, :] / magnitude[:-1, :]
-#     return grad
-    
-# def total_variation_torch(image):
-#     tv_x = (image[:, 1:] - image[:, :-1])**2
-#     tv_y = (image[1:, :] - image[:-1, :])**2
-#     return torch.sqrt(tv_x + tv_y).sum()
-
-# def total_variation(image):
-#     tv_x = (image[:, 1:] - image[:, :-1])**2
-#     tv_y = (image[1:, :] - image[:-1, :])**2
-#     return np.sum(np.sqrt(tv_x + tv_y))
-
-
 
 def coordinate_descent(defocus_stack,  experiment_folder='experiments', gss_tol = 1e-2, gss_window = 1, ls_maxiter = 100, ls_maxiter_multiplier = None, num_epochs = 25, least_squares_first = True, save_plots = True, show_plots = False, depth_init = None, aif_init = None, dpt_denoising_weight = None, aif_denoising_weight = None, dpt_denoise_delay = 10, experiment_name = 'coord-descent', vmin = 0.7, vmax = 1.9, proxy_opt = False, beta = 1e-3, multiplier = 1.1, remove_outliers = False, diff_thresh = 2, tv_thresh = 0.15, tv_thresh_min = 0.15, tv_thresh_multiplier = None, outlier_patch_type = 'tv', adaptive_grid = False, grid_window = 0.25, gamma = 1e-3, similarity_penalty = False, finite_differences = False, t = None, fd_maxiter = 100, epsilon = 1e-3, min_Z = 0.1, max_Z = 10, num_Z = 100, k = 1, use_CUDA = True, aif_method='fista'):
     assert not (finite_differences and adaptive_grid)
