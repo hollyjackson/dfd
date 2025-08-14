@@ -7,7 +7,6 @@ import math
 import utils
 import forward_model
 import globals
-import gradient_descent
 import least_squares
 
 from scipy.optimize import curve_fit

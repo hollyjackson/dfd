@@ -5,7 +5,6 @@ import matplotlib.pyplot as plt
 import utils
 import forward_model
 import globals
-import gradient_descent
 import least_squares
 import section_search
 import torch
