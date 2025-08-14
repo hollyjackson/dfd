@@ -47,7 +47,7 @@ except ImportError:
 
 
 
-def coordinate_descent(defocus_stack,  gss_tol = 1e-2, gss_window = 1, ls_maxiter = 100, ls_maxiter_multiplier = None, num_epochs = 25, least_squares_first = True, save_plots = True, show_plots = False, depth_init = None, aif_init = None, dpt_denoising_weight = None, aif_denoising_weight = None, dpt_denoise_delay = 10, experiment_name = 'coord-descent', vmin = 0.7, vmax = 1.9, proxy_opt = False, beta = 1e-3, multiplier = 1.1, remove_outliers = False, diff_thresh = 2, tv_thresh = 0.15, tv_thresh_min = 0.15, tv_thresh_multiplier = None, outlier_patch_type = 'tv', adaptive_grid = False, grid_window = 0.25, gamma = 1e-3, similarity_penalty = False, finite_differences = False, t = None, fd_maxiter = 100, epsilon = 1e-3, min_Z = 0.1, max_Z = 10, num_Z = 100, k = 1, use_CUDA = True, aif_method='fista'):
+def coordinate_descent(defocus_stack,  experiment_folder='experiments', gss_tol = 1e-2, gss_window = 1, ls_maxiter = 100, ls_maxiter_multiplier = None, num_epochs = 25, least_squares_first = True, save_plots = True, show_plots = False, depth_init = None, aif_init = None, dpt_denoising_weight = None, aif_denoising_weight = None, dpt_denoise_delay = 10, experiment_name = 'coord-descent', vmin = 0.7, vmax = 1.9, proxy_opt = False, beta = 1e-3, multiplier = 1.1, remove_outliers = False, diff_thresh = 2, tv_thresh = 0.15, tv_thresh_min = 0.15, tv_thresh_multiplier = None, outlier_patch_type = 'tv', adaptive_grid = False, grid_window = 0.25, gamma = 1e-3, similarity_penalty = False, finite_differences = False, t = None, fd_maxiter = 100, epsilon = 1e-3, min_Z = 0.1, max_Z = 10, num_Z = 100, k = 1, use_CUDA = True, aif_method='fista'):
     assert not (finite_differences and adaptive_grid)
     assert not (finite_differences and similarity_penalty)
     assert aif_method in ['fista', 'ls']
@@ -55,7 +55,7 @@ def coordinate_descent(defocus_stack,  gss_tol = 1e-2, gss_window = 1, ls_maxite
     # important initializations ---------------------
     if save_plots:
         EXPERIMENT_NAME = experiment_name
-        experiment_folder = utils.create_experiment_folder(EXPERIMENT_NAME)
+        experiment_folder = utils.create_experiment_folder(EXPERIMENT_NAME, base_folder=experiment_folder)
     
     device = torch.device("cuda" if (torch.cuda.is_available() and use_CUDA) else "cpu")
     defocus_stack_torch = torch.from_numpy(defocus_stack).to(device)
@@ -346,6 +346,11 @@ def coordinate_descent(defocus_stack,  gss_tol = 1e-2, gss_window = 1, ls_maxite
             aif, dpt, dpt_proxy = generate_DPT(aif, dpt, dpt_proxy, beta=beta, iter_folder=iter_folder, last_dpt=last_dpt)
             aif, dpt, dpt_proxy = generate_AIF(aif, dpt, dpt_proxy, ls_maxiter, iter_folder=iter_folder)
 
+        # save images themselves
+        if save_plots:
+            utils.save_dpt(iter_folder, 'dpt_'+str(i), dpt)
+            utils.save_aif(iter_folder, 'aif_'+str(i), aif / IMAGE_RANGE)
+        
         beta *= multiplier
         # if similarity_penalty:
         last_dpt = torch.clone(dpt.detach())

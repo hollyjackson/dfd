@@ -233,8 +233,8 @@ def grid_search_opt_k(gt_aif, defocus_stack_torch, min_Z = 0.1, max_Z = 10, num_
         all_losses[:,:,i] = objective_full(dpt, gt_aif, defocus_stack_torch, pred=torch.from_numpy(defocus_stack).to(gt_aif.device), beta=beta, proxy=proxy, gamma=gamma, similarity_penalty=similarity_penalty, last_dpt=last_dpt)
 
     sorted_indices = np.argsort(all_losses, axis=2)
-    k_min_indices = sorted_indices[:,:,:k] # axis = 2
-    # k_min_indices = k_min_indices_no_overlap(sorted_indices, k, gss_window=gss_window)
+    # k_min_indices = sorted_indices[:,:,:k] # axis = 2
+    k_min_indices = k_min_indices_no_overlap(sorted_indices, k, gss_window=gss_window)
     # print(k_min_indices.shape)
     
     depth_maps = Z[k_min_indices]

@@ -141,6 +141,38 @@ def plot_compare_greyscale(recon, gt, vmin=None, vmax=None):
     plt.tight_layout()
     # plt.show()
 
+def load_NYUv2_dpt(path_to_file, resize_frac=2):
+    dpt = skimage.io.imread(path_to_file).astype(np.float32)
+    width, height = dpt.shape
+    dpt /= 1e4  # scale depth values
+    dpt = np.clip(dpt, 0.1, 10.0) # optionally clip
+    print(width, height)
+    # resize with anti-aliasing
+    dpt = skimage.transform.resize(
+        dpt,
+        output_shape=(width//resize_frac,height//resize_frac), # (height, width)
+        order=1,                  # bilinear interpolation
+        anti_aliasing=True,
+        preserve_range=True       # don't normalize to [0, 1]
+    )
+    # convert to torch tensor
+    return torch.from_numpy(dpt)
+
+def load_NYUv2_aif(path_to_file, resize_frac=2):
+    aif = skimage.io.imread(path_to_file).astype(np.float32) / 255.0
+    width, height, _ = aif.shape
+    print(width, height)
+    # resize if needed
+    aif = skimage.transform.resize(
+        aif,
+        output_shape=(width//resize_frac,height//resize_frac), # (height, width)
+        order=1,                  # bilinear interpolation
+        anti_aliasing=True,
+        preserve_range=True       # keep values in [0, 255] if original was uint8
+    )
+    # convert to torch tensor
+    return torch.from_numpy(aif)
+
 def load_single_sample(sample='0045', set='train', fs=5, res='half'):
     assert fs == 5 or fs == 10
     assert res == 'full' or res == 'half'
@@ -162,38 +194,41 @@ def load_single_sample(sample='0045', set='train', fs=5, res='half'):
     #     dpt = cv2.resize(dpt, (640//2, 480//2))
     # dpt = torch.tensor(np.asarray(dpt, dtype=np.float32))# / 1e4
     
-    dpt = skimage.io.imread(os.path.join(data_path, set+'_depth', img_name)).astype(np.float32)
-    dpt /= 1e4  # scale depth values
-    dpt = np.clip(dpt, 0.1, 10.0) # optionally clip
-    if res == 'half':
-        # resize with anti-aliasing
-        dpt = skimage.transform.resize(
-            dpt,
-            output_shape=(480//2,640//2), # (height, width)
-            order=1,                  # bilinear interpolation
-            anti_aliasing=True,
-            preserve_range=True       # don't normalize to [0, 1]
-        )
-    # convert to torch tensor
-    dpt = torch.from_numpy(dpt)
+    # dpt = skimage.io.imread(os.path.join(data_path, set+'_depth', img_name)).astype(np.float32)
+    # dpt /= 1e4  # scale depth values
+    # dpt = np.clip(dpt, 0.1, 10.0) # optionally clip
+    # if res == 'half':
+    #     # resize with anti-aliasing
+    #     dpt = skimage.transform.resize(
+    #         dpt,
+    #         output_shape=(480//2,640//2), # (height, width)
+    #         order=1,                  # bilinear interpolation
+    #         anti_aliasing=True,
+    #         preserve_range=True       # don't normalize to [0, 1]
+    #     )
+    # # convert to torch tensor
+    # dpt = torch.from_numpy(dpt)
+    resize_frac = 2 if res == 'half' else 1
+    dpt = load_NYUv2_dpt(os.path.join(data_path, set+'_depth', img_name), resize_frac=resize_frac)
 
     # aif = cv2.cvtColor(cv2.imread(os.path.join(data_path,set+'_rgb',img_name)), cv2.COLOR_BGR2RGB)
     # if res == 'half':
     #     aif = cv2.resize(aif,(640//2,480//2))
     # aif = torch.tensor(aif)
     # load RGB image (automatically returns float in [0, 255] if it's uint8)
-    aif = skimage.io.imread(os.path.join(data_path, set+'_rgb', img_name)).astype(np.float32) / 255.0
-    # resize if needed
-    if res == 'half':
-        aif = skimage.transform.resize(
-            aif,
-            output_shape=(480//2,640//2), # (height, width)
-            order=1,                  # bilinear interpolation
-            anti_aliasing=True,
-            preserve_range=True       # keep values in [0, 255] if original was uint8
-        )
-    # convert to torch tensor
-    aif = torch.from_numpy(aif)
+    # aif = skimage.io.imread(os.path.join(data_path, set+'_rgb', img_name)).astype(np.float32) / 255.0
+    # # resize if needed
+    # if res == 'half':
+    #     aif = skimage.transform.resize(
+    #         aif,
+    #         output_shape=(480//2,640//2), # (height, width)
+    #         order=1,                  # bilinear interpolation
+    #         anti_aliasing=True,
+    #         preserve_range=True       # keep values in [0, 255] if original was uint8
+    #     )
+    # # convert to torch tensor
+    # aif = torch.from_numpy(aif)
+    aif = load_NYUv2_aif(os.path.join(data_path, set+'_rgb', img_name), resize_frac=resize_frac)
 
     #files = os.listdir(os.path.join(data_path,set+'_fs'+ext))
     #files = sorted(files)
@@ -201,6 +236,33 @@ def load_single_sample(sample='0045', set='train', fs=5, res='half'):
     #assert len(gt_defocus_stack) == fs
     return aif, dpt#, gt_defocus_stack
 
+
+def compute_RMS(pred, gt):
+    diff_sq = (pred - gt) ** 2
+    return np.sqrt(np.mean(diff_sq))
+
+def compute_Rel(pred, gt):
+    # absolute Relative error: mean(|pred - gt| / gt).
+    rel = np.abs(pred - gt) / (np.abs(gt) + 1e-8)
+    return np.mean(rel)
+
+def compute_accuracy_metrics(pred, gt):
+    # Returns δ1, δ2, δ3 as defined by Eigen et al.
+    # δ_k = fraction of pixels with max(pred/gt, gt/pred) < 1.25^k
+    
+    ratio = np.maximum(pred / gt, gt / pred)
+    delta1 = np.mean(ratio < 1.25)
+    delta2 = np.mean(ratio < 1.25**2)
+    delta3 = np.mean(ratio < 1.25**3)
+    
+    return {"delta1": delta1, "delta2": delta2, "delta3": delta3}
+
+def save_dpt(path, fn, dpt):
+    dpt_scaled = (dpt.numpy() * 1e4).astype(np.float32)
+    skimage.io.imsave(os.path.join(path, fn + '.tiff'), dpt_scaled)
+
+def save_aif(path, fn, aif):
+    skimage.io.imsave(os.path.join(path, fn + '.tiff'), aif.numpy().squeeze().astype(np.float32))
 
 def load_sample_image(fs=5, res='half'):
     assert fs == 5 or fs == 10
@@ -223,20 +285,22 @@ def load_sample_image(fs=5, res='half'):
     #     dpt = cv2.resize(dpt,(640//2, 480//2))
     # dpt = torch.from_numpy(dpt)
     
-    dpt = skimage.io.imread(os.path.join(data_path, 'test_depth', img_name)).astype(np.float32)
-    dpt /= 1e4  # scale depth values
-    dpt = np.clip(dpt, 0.1, 10.0) # optionally clip
-    if res == 'half':
-        # resize with anti-aliasing
-        dpt = skimage.transform.resize(
-            dpt,
-            output_shape=(480//2,640//2), # (height, width)
-            order=1,                  # bilinear interpolation
-            anti_aliasing=True,
-            preserve_range=True       # don't normalize to [0, 1]
-        )
-    # convert to torch tensor
-    dpt = torch.from_numpy(dpt)
+    # dpt = skimage.io.imread(os.path.join(data_path, 'test_depth', img_name)).astype(np.float32)
+    # dpt /= 1e4  # scale depth values
+    # dpt = np.clip(dpt, 0.1, 10.0) # optionally clip
+    # if res == 'half':
+    #     # resize with anti-aliasing
+    #     dpt = skimage.transform.resize(
+    #         dpt,
+    #         output_shape=(480//2,640//2), # (height, width)
+    #         order=1,                  # bilinear interpolation
+    #         anti_aliasing=True,
+    #         preserve_range=True       # don't normalize to [0, 1]
+    #     )
+    # # convert to torch tensor
+    # dpt = torch.from_numpy(dpt)
+    resize_frac = 2 if res == 'half' else 1
+    dpt = load_NYUv2_dpt(os.path.join(data_path, 'test_depth', img_name), resize_frac=resize_frac)
 
     # si et al.
     # aif = cv2.cvtColor(cv2.imread(os.path.join(data_path,'test_rgb',img_name)), cv2.COLOR_BGR2RGB)
@@ -245,19 +309,20 @@ def load_sample_image(fs=5, res='half'):
     # aif = torch.from_numpy(aif/255.).type(torch.float32).contiguous()
 
     # load RGB image (automatically returns float in [0, 255] if it's uint8)
-    aif = skimage.io.imread(os.path.join(data_path, 'test_rgb', img_name)).astype(np.float32) / 255.0
-    print(aif[100,100])
-    # resize if needed
-    if res == 'half':
-        aif = skimage.transform.resize(
-            aif,
-            output_shape=(480//2,640//2), # (height, width)
-            order=1,                  # bilinear interpolation
-            anti_aliasing=True,
-            preserve_range=True       # keep values in [0, 255] if original was uint8
-        )
-    # convert to torch tensor
-    aif = torch.from_numpy(aif)
+    # aif = skimage.io.imread(os.path.join(data_path, 'test_rgb', img_name)).astype(np.float32) / 255.0
+    # print(aif[100,100])
+    # # resize if needed
+    # if res == 'half':
+    #     aif = skimage.transform.resize(
+    #         aif,
+    #         output_shape=(480//2,640//2), # (height, width)
+    #         order=1,                  # bilinear interpolation
+    #         anti_aliasing=True,
+    #         preserve_range=True       # keep values in [0, 255] if original was uint8
+    #     )
+    # # convert to torch tensor
+    # aif = torch.from_numpy(aif)
+    aif = load_NYUv2_aif(os.path.join(data_path, 'test_rgb', img_name), resize_frac=resize_frac)
     # print('after',aif.min(), aif.max())
     
     files = os.listdir(os.path.join(data_path,'test_fs'+ext))
@@ -268,11 +333,11 @@ def load_sample_image(fs=5, res='half'):
     return aif, dpt, gt_defocus_stack
 
 
-def create_experiment_folder(experiment_name):
+def create_experiment_folder(experiment_name, base_folder="experiments"):
     # Create "experiments" folder and a timestamped subfolder for the experiment
-    base_folder = "experiments"
-    if not os.path.exists(base_folder):
-        os.makedirs(base_folder)
+    # base_folder = "experiments"
+    # if not os.path.exists(base_folder):
+    #     os.makedirs(base_folder)
     
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     folder_name = f"{experiment_name}_{timestamp}"

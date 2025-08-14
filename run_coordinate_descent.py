@@ -75,15 +75,16 @@ def coord_descent(defocus_stack, least_squares_first = True, depth_init = 1, aif
     # COORDINATE DESCENT
     # -------------------
     
-    dpt, aif, _ = coordinate_descent.coordinate_descent(defocus_stack, show_plots=False,
+    dpt, aif, _ = coordinate_descent.coordinate_descent(defocus_stack, experiment_folder='/data/holly_jackson/experiments', show_plots=False,
                                                      save_plots=True, experiment_name = EXPERIMENT_NAME, 
                                                         num_epochs=40,
                                                      least_squares_first=least_squares_first, depth_init=depth_init,
                                                      aif_init=aif_init, 
-                                                        k = 5, aif_method='fista', finite_differences=False, num_Z=100, 
+                                                        k = 3, aif_method='fista', finite_differences=False, num_Z=100, 
                                                      ls_maxiter=200, ls_maxiter_multiplier=1.05,#1.075, 
                                                      use_CUDA=False, vmin = vmin, vmax = vmax)
 
+    
     return dpt, aif
 
 
@@ -104,6 +105,11 @@ def main():
     # coord descent
     dpt, aif = coord_descent(defocus_stack, vmin=gt_dpt.min(), vmax=gt_dpt.max(),
                              depth_init=1)
+
+    # final metrics
+    print('RMS', utils.compute_RMS(dpt.numpy(), gt_dpt.numpy()))
+    print('Rel', utils.compute_Rel(dpt.numpy(), gt_dpt.numpy()))
+    print(utils.compute_accuracy_metrics(dpt.numpy(), gt_dpt.numpy()))
 
 if __name__ == "__main__":
     main()
