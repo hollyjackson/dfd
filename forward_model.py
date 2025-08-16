@@ -16,6 +16,80 @@ import utils
 # from globals import *
 import globals
 
+
+
+def compute_u_v_np():
+    max_kernel_size = globals.MAX_KERNEL_SIZE    
+    # lim = int((float(max_kernel_size) - 1) / 2.)
+    lim = max_kernel_size // 2
+
+    us = np.linspace(-lim, lim, max_kernel_size)
+    vs = np.linspace(-lim, lim, max_kernel_size)
+    grid_u, grid_v = np.meshgrid(us, vs, indexing='ij')
+    u = grid_u[None, None, None, ...]
+    v = grid_v[None, None, None, ...]
+
+    return u, v
+
+def compute_shifted_indices_np(width, height):
+    max_kernel_size = globals.MAX_KERNEL_SIZE
+    # lim = int((float(max_kernel_size) - 1) / 2.)
+    lim = max_kernel_size // 2
+    
+    row_indices = np.zeros((width,height,max_kernel_size,max_kernel_size), dtype=np.intp)
+    col_indices  = np.zeros((width,height,max_kernel_size,max_kernel_size), dtype=np.intp)
+    
+    grid = np.meshgrid(np.arange(width), np.arange(height), indexing='ij')
+    indices = np.stack(grid, axis=-1)
+
+    for i in range(-lim, lim+1):
+        for j in range(-lim, lim+1):
+            row = indices[:,:,0] + i
+            col = indices[:,:,1] + j
+            row_indices[:,:,i+lim,j+lim] = row
+            col_indices[:,:,i+lim,j+lim] = col
+
+    return row_indices, col_indices
+
+def generate_mask_np(row_indices, col_indices, width, height):
+    
+    condition1 = row_indices.flatten() < 0
+    condition2 = row_indices.flatten() >= width
+    condition3 = col_indices.flatten() < 0
+    condition4 = col_indices.flatten() >= height
+    indices_to_delete = np.where(condition1 | condition2 | condition3 | condition4)
+    mask = np.ones(col_indices.flatten().shape[0], dtype=np.bool)
+    mask[indices_to_delete] = False
+
+    return mask
+
+def compute_mask_flattened_indices_np(row_indices, col_indices, mask, width, height):
+    max_kernel_size = globals.MAX_KERNEL_SIZE
+    
+    flattened_indices = row_indices * (height) + col_indices
+    
+    row = np.arange(width*height)
+    row = np.expand_dims(row, 1)
+    row = np.tile(row, (1, max_kernel_size*max_kernel_size))
+    row = row.flatten()
+    row = row[mask]#.astype(np.int64)
+    
+    col = flattened_indices.flatten()
+    col = col[mask]#.astype(torch.int64)
+
+    return row, col
+
+def precompute_indices_np(width, height):#, max_kernel_size = 7):
+    
+    u, v = compute_u_v_np()#max_kernel_size = max_kernel_size)
+    row_indices, col_indices = compute_shifted_indices_np(width, height)#, max_kernel_size = max_kernel_size)
+    # grab indices to remove 
+    mask = generate_mask_np(row_indices, col_indices, width, height)
+    row, col = compute_mask_flattened_indices_np(row_indices, col_indices, mask, width, height)#, max_kernel_size = max_kernel_size)
+
+    return u, v, row, col, mask
+
+
 def compute_u_v():
     max_kernel_size = globals.MAX_KERNEL_SIZE    
     # lim = int((float(max_kernel_size) - 1) / 2.)
@@ -87,8 +161,13 @@ def precompute_indices(width, height):#, max_kernel_size = 7):
     return u, v, row, col, mask
 
 
-def computer(dpt, Df):
-    Df_expanded = Df.view(1, 1, -1).to(dpt.device)
+def computer(dpt, Df, use_torch=False):
+    if use_torch:
+        Df_expanded = Df.view(1, 1, -1).to(dpt.device)
+    else:
+        if not isinstance(Df, np.ndarray):
+            Df = Df.numpy()
+        Df_expanded = Df.reshape(1, 1, -1)
     # print(globals.f, globals.D, globals.ps)
     
     # # if we instead have sensor distance, must use
@@ -97,11 +176,16 @@ def computer(dpt, Df):
     # # si et al formulation -- is equivalent
     # sensor_dist = Df_expanded * globals.f / (Df_expanded - globals.f)
     # CoC = globals.D * sensor_dist * torch.abs(1/globals.f - 1/sensor_dist - 1/(dpt.unsqueeze(-1)+1e-8))        
-    
-    CoC = ((globals.D) 
-        * (torch.abs(dpt.unsqueeze(-1) - Df_expanded) / (dpt.unsqueeze(-1)+1e-8)) 
-        * (globals.f / (Df_expanded - globals.f)))
-    
+
+    if use_torch:
+        CoC = ((globals.D) 
+            * (torch.abs(dpt.unsqueeze(-1) - Df_expanded) / (dpt.unsqueeze(-1)+1e-8)) 
+            * (globals.f / (Df_expanded - globals.f)))
+    else:
+        CoC = ((globals.D) 
+            * (np.abs(dpt[...,None] - Df_expanded) / (dpt[...,None]+1e-8)) 
+            * (globals.f / (Df_expanded - globals.f)))
+        
     # print('CoC',CoC.shape)
     # print(CoC)
     # for i in range(5):
@@ -111,8 +195,10 @@ def computer(dpt, Df):
     r = CoC / 2. / globals.ps
     # for i in range(5):
     #     print('example sigma',r[237,110,i].item())
-    
-    r[torch.where(r < 2)] = 2
+    if use_torch:
+        r[torch.where(r < 2)] = 2
+    else:
+        r[np.where(r < 2)] = 2
     # r[torch.where(r < 0.5)] = 0.5
     # r[torch.where(r < 1)] = 1
     # print('r.shape',r.shape)
@@ -121,7 +207,7 @@ def computer(dpt, Df):
     
     return r
 
-def computeG(r, u, v, kernel='gaussian'):
+def computeG(r, u, v, kernel='gaussian', use_torch=False):
     assert kernel in ['gaussian', 'pillbox']
     # gaussian kernels
     # G = (1 / (2 * torch.pi * (r+1e-8)**2) * 
@@ -130,13 +216,17 @@ def computeG(r, u, v, kernel='gaussian'):
     # TODO: change this equation
     # the way they do it, they just IGNORE if r <= 1
     
-    if kernel == 'gaussian':
+    if kernel == 'gaussian' and use_torch:
         # todo 
         G = torch.exp(-(u.to(r.device)**2 + v.to(r.device)**2) / (2 * (r+1e-8)**2))
+    elif kernel == 'gaussian' and not use_torch:
+        G = np.exp(-(u**2 + v**2) / (2 * (r+1e-8)**2))
         # G = 1. / ((r+1e-8)**2) * torch.exp(-2.0 * (u.to(r.device)**2 + v.to(r.device)**2)/ ((r+1e-8)**2)) # si et al uses this formulation
-    elif kernel == 'pillbox':
+    elif kernel == 'pillbox' and use_torch:
         # alternatively, use a pillbox
         G = ((u.to(r.device)**2 + v.to(r.device)**2) <= r**2).float()
+    elif kernel == 'pillbox' and not use_torch:
+        G = ((u**2 + v**2) <= r**2).astype(np.float)
     # print('G.shape',G.shape)
 
     # # ignore r <= 1
@@ -178,7 +268,10 @@ def computeG(r, u, v, kernel='gaussian'):
     # G[G < 0.001] = 0
 
     # normalize the kernels
-    norm = torch.sum(G, dim=(-2,-1)).unsqueeze(-1).unsqueeze(-1)
+    if use_torch:
+        norm = torch.sum(G, dim=(-2,-1)).unsqueeze(-1).unsqueeze(-1)
+    else:
+        norm = np.sum(G, axis=(-2,-1), keepdims=True)
     # print('G nan?',torch.isnan(G).sum() > 0)
     G = G / (norm+1e-8)
 
@@ -194,17 +287,20 @@ def buildA(dpt, u, v, row, col, mask, use_torch=False, kernel='gaussian', op=Non
     # Find gaussian kernels from given dpt map 
     width, height = dpt.shape
     # print(width, height)
-    r = computer(dpt, globals.Df)
+    r = computer(dpt, globals.Df, use_torch=use_torch)
     # print(r[189+25,29+25,:])
     # print('r',r[214,54])
     _, _, fs = r.shape
-    r = r.unsqueeze(-1).unsqueeze(-1)
+    if use_torch:
+        r = r.unsqueeze(-1).unsqueeze(-1)
+    else:
+        r = r[...,None,None]
     
     
     if op == 'si':
         G, _ = computeG_si(r)
     else:
-        G, _ = computeG(r, u, v, kernel=kernel)
+        G, _ = computeG(r, u, v, kernel=kernel, use_torch=use_torch)
     # print(G[101,87])
 
     A_stack = []
@@ -220,9 +316,11 @@ def buildA(dpt, u, v, row, col, mask, use_torch=False, kernel='gaussian', op=Non
             # A = A.coalesce().to_sparse_csr()
             A_stack.append((indices, data))
         else:
-            A = scipy.sparse.csc_matrix((data, (row, col)),
-                shape=(width*height, width*height))
-            A_stack.append(A)
+            indices = np.stack([row, col])
+            A_stack.append((indices, data))
+            # A = scipy.sparse.csr_matrix((data, (row, col)),
+            #     shape=(width*height, width*height), dtype=data.dtype)
+            # A_stack.append(A)
 
     return A_stack
 
@@ -333,24 +431,32 @@ def forward_torch(dpt, aif, indices=None, kernel='gaussian', op=None):
 def forward(dpt, aif, indices=None, kernel='gaussian'):
     if indices is None:
         width, height = dpt.shape
-        u, v, row, col, mask = precompute_indices(width, height)
+        u, v, row, col, mask = precompute_indices_np(width, height)
     else:
         u, v, row, col, mask = indices
-    A_stack = buildA(dpt, u, v, row, col, mask, kernel=kernel)
+    A_stack = buildA(dpt, u, v, row, col, mask, kernel=kernel, use_torch=False)
     width, height = dpt.shape
 
     defocus_stack = []
+
+    aif_red = aif[:,:,0].flatten()
+    aif_green = aif[:,:,1].flatten()
+    aif_blue = aif[:,:,2].flatten()
     
     for idx in range(len(A_stack)):
-        A = A_stack[idx]
+        A_indices, A_values = A_stack[idx]
+        A_indices = torch.from_numpy(A_indices)
+        A_values = torch.from_numpy(A_values)
+
+        b = torch_sparse.spmm(A_indices, A_values, 
+            width*height, width*height, aif.reshape((width*height,3)))
         
-        aif_red = aif[:,:,0].flatten()
-        aif_green = aif[:,:,1].flatten()
-        aif_blue = aif[:,:,2].flatten()
-        b_red = A @ aif_red
-        b_green = A @ aif_green
-        b_blue = A @ aif_blue
-        b = np.column_stack((b_red, b_green, b_blue))
+        # A = A_stack[idx]
+        
+        # b_red = A @ aif_red
+        # b_green = A @ aif_green
+        # b_blue = A @ aif_blue
+        # b = np.column_stack((b_red, b_green, b_blue))
 
         b = b.reshape((width,height,3))
 
