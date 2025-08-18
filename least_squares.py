@@ -36,13 +36,16 @@ def buildb(defocus_stack):
 
 
 
-def bounded_fista_3d(dpt, defocus_stack, IMAGE_RANGE, tol = 1e-6, maxiter = 1000, gt=None):
+def bounded_fista_3d(dpt, defocus_stack, IMAGE_RANGE, indices=None, tol = 1e-6, maxiter = 1000, gt=None):
     
     print('Bounded FISTA...')
 
     width, height = dpt.shape
-
-    u, v, row, col, mask = forward_model.precompute_indices(width, height)
+    if indices is None:
+        u, v, row, col, mask = forward_model.precompute_indices(width, height)
+    else:
+        u, v, row, col, mask = indices
+    
     A_stack = forward_model.buildA(dpt, u, v, row, col, mask)
     b_red_stack, b_green_stack, b_blue_stack = buildb(defocus_stack)
 
@@ -102,7 +105,7 @@ def bounded_fista_3d(dpt, defocus_stack, IMAGE_RANGE, tol = 1e-6, maxiter = 1000
     return aif.reshape((width, height, 3))
 
 
-def bounded_projected_gradient_descent(dpt, defocus_stack, IMAGE_RANGE, eta0 = 1.0, alpha = 1e-4, beta = 0.5, tol = 1e-6, maxiter = 1000):
+def bounded_projected_gradient_descent(dpt, defocus_stack, IMAGE_RANGE, indices = None, eta0 = 1.0, alpha = 1e-4, beta = 0.5, tol = 1e-6, maxiter = 1000):
     
     def f(Ax, b):
         return 0.5 * np.linalg.norm(Ax - b)**2
@@ -110,8 +113,12 @@ def bounded_projected_gradient_descent(dpt, defocus_stack, IMAGE_RANGE, eta0 = 1
     print('Bounded projected gradient descent...')
 
     width, height = dpt.shape
+    if indices is None:
+        u, v, row, col, mask = forward_model.precompute_indices(width, height)
+    else:
+        u, v, row, col, mask = indices
 
-    u, v, row, col, mask = forward_model.precompute_indices(width, height)
+    # u, v, row, col, mask = forward_model.precompute_indices(width, height)
     A_stack = forward_model.buildA(dpt, u, v, row, col, mask)
     b_red_stack, b_green_stack, b_blue_stack = buildb(defocus_stack)
 
@@ -193,12 +200,16 @@ def bounded_projected_gradient_descent(dpt, defocus_stack, IMAGE_RANGE, eta0 = 1
     
     
 
-def least_squares(dpt, defocus_stack, maxiter = 500):
+def least_squares(dpt, defocus_stack, indices=None, maxiter = 500):
     print('Least squares...')
 
     width, height = dpt.shape
-
-    u, v, row, col, mask = forward_model.precompute_indices(width, height)
+    
+    if indices is None:
+        u, v, row, col, mask = forward_model.precompute_indices(width, height)
+    else:
+        u, v, row, col, mask = indices
+    # u, v, row, col, mask = forward_model.precompute_indices(width, height)
     A_stack = forward_model.buildA(dpt, u, v, row, col, mask)
     b_red_stack, b_green_stack, b_blue_stack = buildb(defocus_stack)
     

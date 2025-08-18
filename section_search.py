@@ -52,14 +52,14 @@ def objective(Z, i, j, gt_aif, defocus_stack_torch):
     loss = torch.nn.functional.mse_loss(gt, pred)
     return loss.item()
 
-def objective_full(depth_map, gt_aif, defocus_stack_torch, pred=None, beta=0, proxy=None, gamma=0, similarity_penalty=False, last_dpt=None): 
+def objective_full(depth_map, gt_aif, defocus_stack_torch, indices=None, pred=None, beta=0, proxy=None, gamma=0, similarity_penalty=False, last_dpt=None): 
 
     if isinstance(depth_map, np.ndarray):
         depth_map_torch = torch.from_numpy(depth_map).to(defocus_stack_torch.device)
     else:
         depth_map_torch = depth_map
     if pred is None:
-        pred = forward_model.forward_torch(depth_map_torch, gt_aif)
+        pred = forward_model.forward_torch(depth_map_torch, gt_aif, indices=indices)
     # loss = torch.nn.functional.mse_loss(defocus_stack_torch, pred)
     # return loss.item()
     loss = torch.mean((defocus_stack_torch - pred)**2, dim=(0, -1))
@@ -100,7 +100,7 @@ def k_min_indices_no_overlap(sorted_indices, k, gss_window=1):
 
 
 
-def grid_search_opt_k(gt_aif, defocus_stack_torch, min_Z = 0.1, max_Z = 10, num_Z = 100, k = 3, beta=0, proxy=None, gamma=0, similarity_penalty=False, last_dpt=None, gss_window=1):
+def grid_search_opt_k(gt_aif, defocus_stack_torch, indices=None, min_Z = 0.1, max_Z = 10, num_Z = 100, k = 3, beta=0, proxy=None, gamma=0, similarity_penalty=False, last_dpt=None, gss_window=1):
     # try many values of Z
     Z = np.linspace(min_Z, max_Z, num_Z)
 
@@ -125,7 +125,7 @@ def grid_search_opt_k(gt_aif, defocus_stack_torch, min_Z = 0.1, max_Z = 10, num_
                 defocus_stack[j,:,:,c] = scipy.ndimage.convolve(gt_aif[:,:,c].cpu().numpy(), kernel, mode='constant')
         
         dpt = torch.full((width,height), Z[i]).to(gt_aif.device)
-        all_losses[:,:,i] = objective_full(dpt, gt_aif, defocus_stack_torch, pred=torch.from_numpy(defocus_stack).to(gt_aif.device), beta=beta, proxy=proxy, gamma=gamma, similarity_penalty=similarity_penalty, last_dpt=last_dpt)
+        all_losses[:,:,i] = objective_full(dpt, gt_aif, defocus_stack_torch, indices=indices, pred=torch.from_numpy(defocus_stack).to(gt_aif.device), beta=beta, proxy=proxy, gamma=gamma, similarity_penalty=similarity_penalty, last_dpt=last_dpt)
 
     sorted_indices = np.argsort(all_losses, axis=2)
     # k_min_indices = sorted_indices[:,:,:k] # axis = 2
@@ -183,7 +183,7 @@ def find_constant_patches(aif, diff_thresh = 2, patch_size = None):
 
     return problem_pixels
 
-def finite_difference(gt_aif, defocus_stack_torch, last_d, t_initial=None, epsilon=1e-3, max_iter=100, alpha=0.3, beta=0.8, max_ls_iters=80, save_plots=False, show_plots=False, iter_folder=None, vmin=0.9, vmax=1.7):
+def finite_difference(gt_aif, defocus_stack_torch, last_d, indices=None, t_initial=None, epsilon=1e-3, max_iter=100, alpha=0.3, beta=0.8, max_ls_iters=80, save_plots=False, show_plots=False, iter_folder=None, vmin=0.9, vmax=1.7):
     width, height = last_d.shape
     if t_initial == None:
         print('Initialized t to 1')
@@ -198,9 +198,9 @@ def finite_difference(gt_aif, defocus_stack_torch, last_d, t_initial=None, epsil
         t = t_initial.copy() # reset step size 
         
         # f(x) and f(x + eps)
-        f_d = objective_full(last_d, gt_aif, defocus_stack_torch)
+        f_d = objective_full(last_d, gt_aif, defocus_stack_torch, indices=indices)
         print('mse:',np.mean(f_d))
-        f_d_eps = objective_full(last_d + epsilon, gt_aif, defocus_stack_torch)
+        f_d_eps = objective_full(last_d + epsilon, gt_aif, defocus_stack_torch, indices=indices)
 
         # grad = (f(x + eps) - f(x)) / (2 eps)
         grad = (f_d_eps - f_d) / (2 * epsilon)
@@ -215,7 +215,7 @@ def finite_difference(gt_aif, defocus_stack_torch, last_d, t_initial=None, epsil
         for ls_iter in range(max_ls_iters):#tqdm(range(max_ls_iters), desc="Line search".ljust(20), ncols=80): # in lieu of while loop
             # evaluate f(x + t d) for current t
             d_temp = last_d - t * grad
-            f_d_t_eps = objective_full(d_temp, gt_aif, defocus_stack_torch)
+            f_d_t_eps = objective_full(d_temp, gt_aif, defocus_stack_torch, indices=indices)
 
             mask = (f_d_t_eps > f_d - alpha * t * grad ** 2)
             t[mask] = beta * t[mask]
@@ -250,7 +250,7 @@ def finite_difference(gt_aif, defocus_stack_torch, last_d, t_initial=None, epsil
 
     return d
 
-def golden_section_search(Z, argmin_indices, gt_aif, defocus_stack_torch,
+def golden_section_search(Z, argmin_indices, gt_aif, defocus_stack_torch, indices=None,
     window=1, tolerance=1e-5, convergence_error=0, max_iter=100, beta=0, proxy=None, gamma=0, similarity_penalty=False, last_dpt=None, a_b_init=None):
     assert convergence_error >= 0 and convergence_error < 1
     print("Golden-section search...")
@@ -279,8 +279,8 @@ def golden_section_search(Z, argmin_indices, gt_aif, defocus_stack_torch,
         # gss code from wiki
         c = b - (b - a) * invphi
         d = a + (b - a) * invphi
-        f_c = objective_full(c, gt_aif, defocus_stack_torch, beta=beta, proxy=proxy, gamma=gamma, similarity_penalty=similarity_penalty, last_dpt=last_dpt)
-        f_d = objective_full(d, gt_aif, defocus_stack_torch, beta=beta, proxy=proxy, gamma=gamma, similarity_penalty=similarity_penalty, last_dpt=last_dpt)
+        f_c = objective_full(c, gt_aif, defocus_stack_torch, indices=indices, beta=beta, proxy=proxy, gamma=gamma, similarity_penalty=similarity_penalty, last_dpt=last_dpt)
+        f_d = objective_full(d, gt_aif, defocus_stack_torch, indices=indices, beta=beta, proxy=proxy, gamma=gamma, similarity_penalty=similarity_penalty, last_dpt=last_dpt)
 
         mask = f_c < f_d
         b[mask] = d[mask]
@@ -299,8 +299,8 @@ def golden_section_search(Z, argmin_indices, gt_aif, defocus_stack_torch,
     dpt = (b + a) / 2
 
     if last_dpt is not None:
-        mse = objective_full(dpt, gt_aif, defocus_stack_torch, beta=beta, proxy=proxy, gamma=0, similarity_penalty=False, last_dpt=None)
-        last_mse = objective_full(last_dpt, gt_aif, defocus_stack_torch, beta=beta, proxy=proxy, gamma=0, similarity_penalty=False, last_dpt=None)
+        mse = objective_full(dpt, gt_aif, defocus_stack_torch, indices=indices, beta=beta, proxy=proxy, gamma=0, similarity_penalty=False, last_dpt=None)
+        last_mse = objective_full(last_dpt, gt_aif, defocus_stack_torch, indices=indices, beta=beta, proxy=proxy, gamma=0, similarity_penalty=False, last_dpt=None)
         dpt = np.where(mse <= last_mse, dpt, last_dpt)
 
     return dpt
