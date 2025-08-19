@@ -274,6 +274,14 @@ def golden_section_search(Z, argmin_indices, gt_aif, defocus_stack, indices=None
     print('...searching for',(1 - convergence_error)*100,'% convergence')
 
 
+    c = b - (b - a) * invphi
+    d = a + (b - a) * invphi
+    
+    f_c = objective_full(c, gt_aif, defocus_stack, indices=indices, template_A_stack=template_A_stack, beta=beta, proxy=proxy, gamma=gamma, similarity_penalty=similarity_penalty, last_dpt=last_dpt)
+    f_d = objective_full(d, gt_aif, defocus_stack, indices=indices, template_A_stack=template_A_stack, beta=beta, proxy=proxy, gamma=gamma, similarity_penalty=similarity_penalty, last_dpt=last_dpt)
+    dtype_report("f", f_c=f_c, f_d=f_d)
+   
+
     i = 0
     while (((convergence_error == 0 and np.any(b - a > tolerance))
             or (convergence_error != 0 and np.sum((b - a) > tolerance) / a.size > (1 - convergence_error)))
@@ -285,21 +293,40 @@ def golden_section_search(Z, argmin_indices, gt_aif, defocus_stack, indices=None
         # a[mask] = avg[mask]
         # b[mask] = avg[mask]
 
-        # gss code from wiki
-        c = b - (b - a) * invphi
-        d = a + (b - a) * invphi
+        # # gss code from wiki
+        # c = b - (b - a) * invphi
+        # d = a + (b - a) * invphi
         
-        f_c = objective_full(c, gt_aif, defocus_stack, indices=indices, template_A_stack=template_A_stack, beta=beta, proxy=proxy, gamma=gamma, similarity_penalty=similarity_penalty, last_dpt=last_dpt)
-        f_d = objective_full(d, gt_aif, defocus_stack, indices=indices, template_A_stack=template_A_stack, beta=beta, proxy=proxy, gamma=gamma, similarity_penalty=similarity_penalty, last_dpt=last_dpt)
-        dtype_report("f", f_c=f_c, f_d=f_d)
+        # f_c = objective_full(c, gt_aif, defocus_stack, indices=indices, template_A_stack=template_A_stack, beta=beta, proxy=proxy, gamma=gamma, similarity_penalty=similarity_penalty, last_dpt=last_dpt)
+        # f_d = objective_full(d, gt_aif, defocus_stack, indices=indices, template_A_stack=template_A_stack, beta=beta, proxy=proxy, gamma=gamma, similarity_penalty=similarity_penalty, last_dpt=last_dpt)
+        # dtype_report("f", f_c=f_c, f_d=f_d)
         
         # tie-safe implementation
         active = (b - a) > tolerance
         go_left = (f_c <= f_d) & active
         go_right = (~go_left) & active
 
-        b[go_left] = d[go_left]
-        a[go_right] = c[go_right]
+        if np.any(go_left):
+            b[go_left] = d[go_left]
+            d[go_left] = c[go_left]
+            f_d[go_left] = f_c[go_left]
+            c[go_left] = b[go_left] - (b[go_left] - a[go_left]) * invphi
+
+        if np.any(go_right):
+            a[go_right] = c[go_right]
+            c[go_right] = d[go_right]
+            f_c[go_right] = f_d[go_right]
+            d[go_right] = a[go_right] + (b[go_right] - a[go_right]) * invphi
+
+        if np.any(go_left):
+            f_c = objective_full(c, gt_aif, defocus_stack, indices=indices, template_A_stack=template_A_stack, beta=beta, proxy=proxy, gamma=gamma, similarity_penalty=similarity_penalty, last_dpt=last_dpt)
+
+        if np.any(go_right):
+            f_d = objective_full(d, gt_aif, defocus_stack, indices=indices, template_A_stack=template_A_stack, beta=beta, proxy=proxy, gamma=gamma, similarity_penalty=similarity_penalty, last_dpt=last_dpt)
+    
+        
+        # b[go_left] = d[go_left]
+        # a[go_right] = c[go_right]
             
         # mask = f_c < f_d
         # b[mask] = d[mask]
