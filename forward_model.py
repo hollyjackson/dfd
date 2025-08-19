@@ -186,6 +186,7 @@ def buildA(dpt, u, v, row, col, mask, template_A_stack=None):
         
         if template_A_stack is None:
             # warning -- this is > 3x slower
+            # print(data.dtype)
             A = scipy.sparse.csr_matrix((data, (row, col)),
                 shape=(width*height, width*height), dtype=data.dtype)
             # A.sort_indices()
@@ -193,6 +194,7 @@ def buildA(dpt, u, v, row, col, mask, template_A_stack=None):
         else:
             A = A_stack_cache[idx].copy()
             A.data[:] = data[order]
+            # print(data.dtype)
             A_stack.append(A)
             
     return A_stack

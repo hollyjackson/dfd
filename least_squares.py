@@ -74,8 +74,12 @@ def bounded_fista_3d(dpt, defocus_stack, IMAGE_RANGE, indices=None, template_A_s
     progress = tqdm.trange(maxiter, desc="Optimizing", leave=True)        
     for i in progress:#range(maxiter):
         # grad = A.T.dot(A.dot(aif) - b)
+        # t0 = time.time()
         r = Ay - b
+        # print('build r', time.time()-t0)
+        # t0 = time.time()
         grad = A_T.dot(r)
+        # print('grad', time.time() - t0)
 
         # fixed step size
         aif_new = aif_guess - eta * grad

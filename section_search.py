@@ -103,7 +103,7 @@ def k_min_indices_no_overlap(sorted_indices, k, gss_window=1):
 
 def grid_search_opt_k(gt_aif, defocus_stack, indices=None, min_Z = 0.1, max_Z = 10, num_Z = 100, k = 3, beta=0, proxy=None, gamma=0, similarity_penalty=False, last_dpt=None, gss_window=1):
     # try many values of Z
-    Z = np.linspace(min_Z, max_Z, num_Z)
+    Z = np.linspace(min_Z, max_Z, num_Z, dtype=np.float32)
 
     width, height, num_channels = gt_aif.shape
     if indices is None:
@@ -254,6 +254,10 @@ def finite_difference(gt_aif, defocus_stack, last_d, indices=None, t_initial=Non
 
     return d
 
+def dtype_report(tag, **arrs):
+    items = ", ".join(f"{k}:{getattr(v,'dtype','scalar')}" for k,v in arrs.items())
+    print(f"[{tag}] {items}")
+
 def golden_section_search(Z, argmin_indices, gt_aif, defocus_stack, indices=None, template_A_stack=None,
     window=1, tolerance=1e-5, convergence_error=0, max_iter=100, beta=0, proxy=None, gamma=0, similarity_penalty=False, last_dpt=None, a_b_init=None):
     assert convergence_error >= 0 and convergence_error < 1
@@ -269,6 +273,7 @@ def golden_section_search(Z, argmin_indices, gt_aif, defocus_stack, indices=None
 
     print('...searching for',(1 - convergence_error)*100,'% convergence')
 
+
     i = 0
     while (((convergence_error == 0 and np.any(b - a > tolerance))
             or (convergence_error != 0 and np.sum((b - a) > tolerance) / a.size > (1 - convergence_error)))
@@ -283,14 +288,24 @@ def golden_section_search(Z, argmin_indices, gt_aif, defocus_stack, indices=None
         # gss code from wiki
         c = b - (b - a) * invphi
         d = a + (b - a) * invphi
+        
         f_c = objective_full(c, gt_aif, defocus_stack, indices=indices, template_A_stack=template_A_stack, beta=beta, proxy=proxy, gamma=gamma, similarity_penalty=similarity_penalty, last_dpt=last_dpt)
         f_d = objective_full(d, gt_aif, defocus_stack, indices=indices, template_A_stack=template_A_stack, beta=beta, proxy=proxy, gamma=gamma, similarity_penalty=similarity_penalty, last_dpt=last_dpt)
+        dtype_report("f", f_c=f_c, f_d=f_d)
+        
+        # tie-safe implementation
+        active = (b - a) > tolerance
+        go_left = (f_c <= f_d) & active
+        go_right = (~go_left) & active
 
-        mask = f_c < f_d
-        b[mask] = d[mask]
+        b[go_left] = d[go_left]
+        a[go_right] = c[go_right]
+            
+        # mask = f_c < f_d
+        # b[mask] = d[mask]
 
-        mask = f_c > f_d
-        a[mask] = c[mask]
+        # mask = f_c > f_d
+        # a[mask] = c[mask]
 
         i += 1
 
