@@ -36,7 +36,7 @@ def buildb(defocus_stack):
 
 
 
-def bounded_fista_3d(dpt, defocus_stack, IMAGE_RANGE, indices=None, tol = 1e-6, maxiter = 1000, gt=None):
+def bounded_fista_3d(dpt, defocus_stack, IMAGE_RANGE, indices=None, template_A_stack=None, tol = 1e-6, maxiter = 1000, gt=None):
     
     print('Bounded FISTA...')
 
@@ -44,27 +44,28 @@ def bounded_fista_3d(dpt, defocus_stack, IMAGE_RANGE, indices=None, tol = 1e-6, 
     if indices is None:
         u, v, row, col, mask = forward_model.precompute_indices(width, height)
     else:
+        print('here')
         u, v, row, col, mask = indices
     
-    A_stack = forward_model.buildA(dpt, u, v, row, col, mask)
+    A_stack = forward_model.buildA(dpt, u, v, row, col, mask, template_A_stack=template_A_stack)
     b_red_stack, b_green_stack, b_blue_stack = buildb(defocus_stack)
 
-    A = scipy.sparse.vstack(A_stack).tocsr()
+    A = scipy.sparse.vstack(A_stack).tocsr().astype(np.float32, copy=False)
     # print(A.shape,  A.count_nonzero() )
-    A_T = A.T.tocsr()
+    A_T = A.T
     b_red = np.concatenate(b_red_stack)
     b_green = np.concatenate(b_green_stack)
     b_blue = np.concatenate(b_blue_stack)
-    b = np.stack([b_red, b_green, b_blue], axis=1)
+    b = np.stack([b_red, b_green, b_blue], axis=1).astype(np.float32)
 
     # step size -- inverse of the Lipschitz constant of the gradient
     t0 = time.time()
     norm = scipy.sparse.linalg.norm(A, ord=2)
     eta = 1.0 / norm ** 2
     t1 = time.time()
-    print('step size', t1-t0)
+    print('step size duration', t1-t0)
     
-    aif = np.zeros((width*height, 3))
+    aif = np.zeros((width*height, 3), dtype=np.float32)
     aif_guess = aif.copy()
     Ay = A.dot(aif_guess)
 
@@ -105,102 +106,102 @@ def bounded_fista_3d(dpt, defocus_stack, IMAGE_RANGE, indices=None, tol = 1e-6, 
     return aif.reshape((width, height, 3))
 
 
-def bounded_projected_gradient_descent(dpt, defocus_stack, IMAGE_RANGE, indices = None, eta0 = 1.0, alpha = 1e-4, beta = 0.5, tol = 1e-6, maxiter = 1000):
+# def bounded_projected_gradient_descent(dpt, defocus_stack, IMAGE_RANGE, indices = None, eta0 = 1.0, alpha = 1e-4, beta = 0.5, tol = 1e-6, maxiter = 1000):
     
-    def f(Ax, b):
-        return 0.5 * np.linalg.norm(Ax - b)**2
+#     def f(Ax, b):
+#         return 0.5 * np.linalg.norm(Ax - b)**2
         
-    print('Bounded projected gradient descent...')
+#     print('Bounded projected gradient descent...')
 
-    width, height = dpt.shape
-    if indices is None:
-        u, v, row, col, mask = forward_model.precompute_indices(width, height)
-    else:
-        u, v, row, col, mask = indices
+#     width, height = dpt.shape
+#     if indices is None:
+#         u, v, row, col, mask = forward_model.precompute_indices(width, height)
+#     else:
+#         u, v, row, col, mask = indices
 
-    # u, v, row, col, mask = forward_model.precompute_indices(width, height)
-    A_stack = forward_model.buildA(dpt, u, v, row, col, mask)
-    b_red_stack, b_green_stack, b_blue_stack = buildb(defocus_stack)
+#     # u, v, row, col, mask = forward_model.precompute_indices(width, height)
+#     A_stack = forward_model.buildA(dpt, u, v, row, col, mask)
+#     b_red_stack, b_green_stack, b_blue_stack = buildb(defocus_stack)
 
-    A = scipy.sparse.vstack(A_stack).tocsr()
-    A_T = A.T.tocsr()
-    b_red = np.concatenate(b_red_stack)
-    b_green = np.concatenate(b_green_stack)
-    b_blue = np.concatenate(b_blue_stack)
+#     A = scipy.sparse.vstack(A_stack).tocsr()
+#     A_T = A.T.tocsr()
+#     b_red = np.concatenate(b_red_stack)
+#     b_green = np.concatenate(b_green_stack)
+#     b_blue = np.concatenate(b_blue_stack)
 
 
-    # minimize squares Euclidean norm residual 
-    # 1/2 ||Ax - b||_2^2
-    # s.t. x \in [0, 255]
+#     # minimize squares Euclidean norm residual 
+#     # 1/2 ||Ax - b||_2^2
+#     # s.t. x \in [0, 255]
 
-    # \nabla f (x) = A^T (Ax - b)
+#     # \nabla f (x) = A^T (Ax - b)
 
-    eta = 0.5
-    # eta = 1.0 / scipy.sparse.linalg.norm(A, ord=2) ** 2
-    # print('step size', eta)
+#     eta = 0.5
+#     # eta = 1.0 / scipy.sparse.linalg.norm(A, ord=2) ** 2
+#     # print('step size', eta)
 
-    recon_aif = []
+#     recon_aif = []
     
-    for b in [b_red, b_green, b_blue]:
-        print('Projected gradient descent')
+#     for b in [b_red, b_green, b_blue]:
+#         print('Projected gradient descent')
     
-        aif = np.zeros((width*height))
-        Ax = A.dot(aif)
+#         aif = np.zeros((width*height))
+#         Ax = A.dot(aif)
         
-        progress = tqdm.trange(maxiter, desc="Optimizing", leave=True)        
-        for i in progress:#range(maxiter):
-            # grad = A.T.dot(A.dot(aif) - b)
-            # t0 = time.time()
-            r = Ax - b
-            grad = A_T.dot(r)
-            # t1 = time.time()
+#         progress = tqdm.trange(maxiter, desc="Optimizing", leave=True)        
+#         for i in progress:#range(maxiter):
+#             # grad = A.T.dot(A.dot(aif) - b)
+#             # t0 = time.time()
+#             r = Ax - b
+#             grad = A_T.dot(r)
+#             # t1 = time.time()
             
-            grad_norm_sq = np.linalg.norm(grad)**2
-            # t2 = time.time()
+#             grad_norm_sq = np.linalg.norm(grad)**2
+#             # t2 = time.time()
             
-            # # Armijo line search
-            f_aif = 0.5 * np.linalg.norm(r)**2
-            # t3 = time.time()
-            # eta = eta0
-            # while True:
-            #     aif_new = aif - eta * grad
-            #     aif_new = np.clip(aif_new, 0, IMAGE_RANGE) # euclidean projection
-            #     Ax_new = A.dot(aif_new)
-            #     if f(Ax_new, b) <= f_aif - alpha * eta * grad_norm_sq:
-            #         break
-            #     eta *= beta
-            # print(eta)
-            # t4 = time.time()
+#             # # Armijo line search
+#             f_aif = 0.5 * np.linalg.norm(r)**2
+#             # t3 = time.time()
+#             # eta = eta0
+#             # while True:
+#             #     aif_new = aif - eta * grad
+#             #     aif_new = np.clip(aif_new, 0, IMAGE_RANGE) # euclidean projection
+#             #     Ax_new = A.dot(aif_new)
+#             #     if f(Ax_new, b) <= f_aif - alpha * eta * grad_norm_sq:
+#             #         break
+#             #     eta *= beta
+#             # print(eta)
+#             # t4 = time.time()
 
-            # fixed step size
-            aif_new = aif - eta * grad
-            aif_new = np.clip(aif_new, 0, IMAGE_RANGE) # euclidean projection
-            Ax_new = A.dot(aif_new)
+#             # fixed step size
+#             aif_new = aif - eta * grad
+#             aif_new = np.clip(aif_new, 0, IMAGE_RANGE) # euclidean projection
+#             Ax_new = A.dot(aif_new)
 
-            # print(f(A, b, aif))
-            if i % 10 == 0:
-                progress.set_postfix(loss=f_aif, refresh=False)
+#             # print(f(A, b, aif))
+#             if i % 10 == 0:
+#                 progress.set_postfix(loss=f_aif, refresh=False)
             
-            if np.linalg.norm(aif_new - aif) < tol:
-                print('Achieved tolerance')
-                break
+#             if np.linalg.norm(aif_new - aif) < tol:
+#                 print('Achieved tolerance')
+#                 break
 
-            # print(f"[{i}] grad: {t1 - t0:.3f}s | grand_norm_sq: {t2 - t1:.3f}s | f_aif: {t3 - t2:.3f}s | armijo: {t4 - t3:.3f}s | total: {t4 - t0:.3f}s")
-
-    
-            aif = aif_new
-            Ax = Ax_new
-
-        recon_aif.append(aif)
-    
-    recon_aif = np.column_stack(recon_aif).reshape((width, height, 3))
-
-    return recon_aif
+#             # print(f"[{i}] grad: {t1 - t0:.3f}s | grand_norm_sq: {t2 - t1:.3f}s | f_aif: {t3 - t2:.3f}s | armijo: {t4 - t3:.3f}s | total: {t4 - t0:.3f}s")
 
     
+#             aif = aif_new
+#             Ax = Ax_new
+
+#         recon_aif.append(aif)
+    
+#     recon_aif = np.column_stack(recon_aif).reshape((width, height, 3))
+
+#     return recon_aif
+
+    
     
 
-def least_squares(dpt, defocus_stack, indices=None, maxiter = 500):
+def least_squares(dpt, defocus_stack, indices=None, template_A_stack=None, maxiter = 500):
     print('Least squares...')
 
     width, height = dpt.shape
@@ -210,7 +211,7 @@ def least_squares(dpt, defocus_stack, indices=None, maxiter = 500):
     else:
         u, v, row, col, mask = indices
     # u, v, row, col, mask = forward_model.precompute_indices(width, height)
-    A_stack = forward_model.buildA(dpt, u, v, row, col, mask)
+    A_stack = forward_model.buildA(dpt, u, v, row, col, mask, template_A_stack=template_A_stack)
     b_red_stack, b_green_stack, b_blue_stack = buildb(defocus_stack)
     
     A = scipy.sparse.vstack(A_stack)

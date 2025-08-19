@@ -124,7 +124,7 @@ def test_load_save_dpt():
     file_path = os.path.join(path, fn + '.tiff')
     
     # Create random float array between 0.1 and 10
-    dpt_orig = torch.from_numpy(np.random.uniform(0.1, 10.0, size=(m, n)).astype(np.float32))
+    dpt_orig = np.random.uniform(0.1, 10.0, size=(m, n)).astype(np.float32)
     
     # Save as TIFF
     utils.save_dpt(path, fn, dpt_orig)

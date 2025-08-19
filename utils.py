@@ -156,7 +156,7 @@ def load_NYUv2_dpt(path_to_file, resize_frac=2):
         preserve_range=True       # don't normalize to [0, 1]
     )
     # convert to torch tensor
-    return torch.from_numpy(dpt)
+    return dpt#torch.from_numpy(dpt)
 
 def load_NYUv2_aif(path_to_file, resize_frac=2):
     aif = skimage.io.imread(path_to_file).astype(np.float32) / 255.0
@@ -171,7 +171,7 @@ def load_NYUv2_aif(path_to_file, resize_frac=2):
         preserve_range=True       # keep values in [0, 255] if original was uint8
     )
     # convert to torch tensor
-    return torch.from_numpy(aif)
+    return aif#torch.from_numpy(aif)
 
 def load_single_sample(sample='0045', set='train', fs=5, res='half'):
     assert fs == 5 or fs == 10
@@ -258,11 +258,11 @@ def compute_accuracy_metrics(pred, gt):
     return {"delta1": delta1, "delta2": delta2, "delta3": delta3}
 
 def save_dpt(path, fn, dpt):
-    dpt_scaled = (dpt.numpy() * 1e4).astype(np.float32)
+    dpt_scaled = (dpt * 1e4).astype(np.float32)
     skimage.io.imsave(os.path.join(path, fn + '.tiff'), dpt_scaled)
 
 def save_aif(path, fn, aif):
-    skimage.io.imsave(os.path.join(path, fn + '.tiff'), aif.numpy().squeeze().astype(np.float32))
+    skimage.io.imsave(os.path.join(path, fn + '.tiff'), aif.squeeze().astype(np.float32))
 
 def load_sample_image(fs=5, res='half'):
     assert fs == 5 or fs == 10
@@ -270,7 +270,7 @@ def load_sample_image(fs=5, res='half'):
     
     ext = str(fs)
     if fs == 10:
-        globals.Df = torch.tensor([0.5, 1, 1.25, 1.5, 1.75, 2, 2.5, 3, 4, 6])  # m 
+        globals.Df = np.array([0.5, 1, 1.25, 1.5, 1.75, 2, 2.5, 3, 4, 6], dtpe=np.float32)  # m 
     if res == 'half':
         ext += '_halfres'
     
