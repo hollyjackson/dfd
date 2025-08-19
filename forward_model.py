@@ -145,12 +145,22 @@ def build_fixed_pattern_csr(width, height, fs, row, col, data, dtype=np.float32)
     data = np.asarray(data, dtype=dtype)
 
     order = np.lexsort((col, row))
+    row_sorted, col_sorted = row[order], col[order]
+
+    # csr structure ensures it stays in original row, col order
+    indptr = np.zeros(width*height+1, dtype=np.int32)
+    np.add.at(indptr, row_sorted + 1, 1)
+    np.cumsum(indptr, out=indptr)
+    indices = col_sorted.astype(np.int32, copy=False)
 
     # build matrices
     A_stack = []
     for idx in range(fs):
-        A = scipy.sparse.csr_matrix((data, (row, col)),
-                shape=(width*height, width*height), dtype=data.dtype)
+        # A = scipy.sparse.csr_matrix((data, (row, col)),
+        #         shape=(width*height, width*height), dtype=data.dtype)
+        # A.sort_indices()
+        A = scipy.sparse.csr_matrix((data, indices, indptr),
+                shape=(width*height, width*height), dtype=data.dtype, copy=False)
         A_stack.append(A)
         
     return A_stack, order
@@ -178,9 +188,10 @@ def buildA(dpt, u, v, row, col, mask, template_A_stack=None):
             # warning -- this is > 3x slower
             A = scipy.sparse.csr_matrix((data, (row, col)),
                 shape=(width*height, width*height), dtype=data.dtype)
+            # A.sort_indices()
             A_stack.append(A)
         else:
-            A = A_stack_cache[idx]
+            A = A_stack_cache[idx].copy()
             A.data[:] = data[order]
             A_stack.append(A)
             
