@@ -279,7 +279,6 @@ def golden_section_search(Z, argmin_indices, gt_aif, defocus_stack, indices=None
     
     f_c = objective_full(c, gt_aif, defocus_stack, indices=indices, template_A_stack=template_A_stack, beta=beta, proxy=proxy, gamma=gamma, similarity_penalty=similarity_penalty, last_dpt=last_dpt)
     f_d = objective_full(d, gt_aif, defocus_stack, indices=indices, template_A_stack=template_A_stack, beta=beta, proxy=proxy, gamma=gamma, similarity_penalty=similarity_penalty, last_dpt=last_dpt)
-    dtype_report("f", f_c=f_c, f_d=f_d)
    
 
     i = 0

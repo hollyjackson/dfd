@@ -55,8 +55,8 @@ def coordinate_descent(defocus_stack,  experiment_folder='experiments', gss_tol 
     
     # precompute indices
     indices = forward_model.precompute_indices(width, height)
-    # sample_data = np.random.rand(indices[2].size).astype(np.float32)
-    template_A_stack = None#forward_model.build_fixed_pattern_csr(width, height, fs, indices[2], indices[3], sample_data)
+    sample_data = np.random.rand(indices[2].size).astype(np.float32)
+    template_A_stack = forward_model.build_fixed_pattern_csr(width, height, fs, indices[2], indices[3], sample_data)
 
     # ------------------------------------------------
     
