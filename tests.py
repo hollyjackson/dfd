@@ -3,6 +3,7 @@ import forward_model
 import utils
 
 import least_squares
+import section_search
 
 import torch
 import skimage
@@ -149,3 +150,66 @@ def test_load_save_dpt():
         print("Test file deleted.")
     except OSError as e:
         print("Error deleting file:", e)
+
+def test_template_A_stack(gt_dpt, gt_aif, defocus_stack):
+
+    fs, width, height, _ = defocus_stack.shape
+
+    indices = forward_model.precompute_indices(width, height)
+    u, v, row, col, mask = indices
+        
+    sample_data = np.random.rand(indices[2].size).astype(np.float32)
+    template_A_stack = forward_model.build_fixed_pattern_csr(width, height, fs, indices[2], indices[3], sample_data)
+    A_stack_v1 = forward_model.buildA(gt_dpt, u, v, row, col, mask, template_A_stack)
+    A_stack_v2 = forward_model.buildA(gt_dpt, u, v, row, col, mask, template_A_stack=None)
+    
+    for i in range(fs):
+        A = A_stack_v1[i]
+        B = A_stack_v2[i]
+        
+        assert np.array_equal(A.indices, B.indices)
+        assert np.array_equal(A.indptr, B.indptr)
+        assert np.array_equal(A.data, B.data)
+    
+    
+        A = A.copy(); A.sum_duplicates(); A.sort_indices()
+        B = B.copy(); B.sum_duplicates(); B.sort_indices()
+        assert A.shape == B.shape
+        
+        diff = (A - B).tocoo()
+        assert np.allclose(diff.data, 0)
+        assert diff.nnz == 0
+            
+    
+        x = np.random.rand(width*height) * IMAGE_RANGE
+        diff = A.dot(x) - B.dot(x)
+        assert np.allclose(diff, 0)
+                          
+        diff = A.T.dot(x) - B.T.dot(x)
+        assert np.allclose(diff, 0)
+    
+    b1 = forward_model.forward(gt_dpt, gt_aif, indices=indices, template_A_stack=template_A_stack)
+    b2 = forward_model.forward(gt_dpt, gt_aif, indices=indices, template_A_stack=None)
+    
+    assert np.allclose(b1, b2)
+    
+    o1 = section_search.objective_full(gt_dpt, gt_aif, defocus_stack, indices=indices, template_A_stack=None)
+    o2 = section_search.objective_full(gt_dpt, gt_aif, defocus_stack, indices=indices, template_A_stack=template_A_stack)
+    
+    assert np.allclose(o1, o2)
+    
+
+    rng = np.random.default_rng(0)
+    test_zs = [gt_dpt, rng.random(gt_dpt.shape, dtype=np.float32), rng.random(gt_dpt.shape, dtype=np.float32)]
+    
+    for z in test_zs:
+        v1 = section_search.objective_full(z, gt_aif, defocus_stack, indices=indices, template_A_stack=template_A_stack)
+        v2 = section_search.objective_full(z, gt_aif, defocus_stack, indices=indices, template_A_stack=template_A_stack)
+        assert np.allclose(v1, v2), "objective_full not deterministic for template path"
+    
+    # Interleaved calls (catches aliasing of shared buffers)
+    z1, z2 = test_zs[:2]
+    a1 = section_search.objective_full(z1, gt_aif, defocus_stack, indices=indices, template_A_stack=template_A_stack)
+    b1 = section_search.objective_full(z2, gt_aif, defocus_stack, indices=indices, template_A_stack=template_A_stack)
+    a2 = section_search.objective_full(z1, gt_aif, defocus_stack, indices=indices, template_A_stack=template_A_stack)
+    assert np.allclose(a1, a2), "state leaked between evaluations"
