@@ -24,7 +24,7 @@ def mse_loss(pred, gt):
     return np.mean((gt - pred)**2)
     
 
-def coordinate_descent(defocus_stack,  experiment_folder='experiments', gss_tol = 1e-2, gss_window = 1, ls_maxiter = 100, ls_maxiter_multiplier = None, num_epochs = 25, least_squares_first = True, save_plots = True, show_plots = False, depth_init = None, aif_init = None, dpt_denoising_weight = None, aif_denoising_weight = None, dpt_denoise_delay = 10, experiment_name = 'coord-descent', vmin = 0.7, vmax = 1.9, proxy_opt = False, beta = 1e-3, multiplier = 1.1, remove_outliers = False, diff_thresh = 2, tv_thresh = 0.15, tv_thresh_min = 0.15, tv_thresh_multiplier = None, outlier_patch_type = 'tv', adaptive_grid = False, grid_window = 0.25, gamma = 1e-3, similarity_penalty = False, finite_differences = False, t = None, fd_maxiter = 100, epsilon = 1e-3, min_Z = 0.1, max_Z = 10, num_Z = 100, k = 1, aif_method='fista'):
+def coordinate_descent(defocus_stack,  experiment_folder='experiments', gss_tol = 1e-2, gss_window = 1, ls_maxiter = 100, ls_maxiter_multiplier = None, num_epochs = 25, least_squares_first = True, save_plots = True, show_plots = False, depth_init = None, aif_init = None, dpt_denoising_weight = None, aif_denoising_weight = None, dpt_denoise_delay = 10, experiment_name = 'coord-descent', vmin = 0.7, vmax = 1.9, proxy_opt = False, beta = 1e-3, multiplier = 1.1, remove_outliers = False, diff_thresh = 2, tv_thresh = 0.15, tv_thresh_min = 0.15, tv_thresh_multiplier = None, outlier_patch_type = 'tv', adaptive_grid = False, grid_window = 0.25, gamma = 1e-3, similarity_penalty = False, finite_differences = False, t = None, fd_maxiter = 100, epsilon = 1e-3, min_Z = 0.1, max_Z = 10, num_Z = 100, k = 1, aif_method='fista', verbose=True):
     assert not (finite_differences and adaptive_grid)
     assert not (finite_differences and similarity_penalty)
     assert aif_method in ['fista', 'ls']
@@ -49,8 +49,9 @@ def coordinate_descent(defocus_stack,  experiment_folder='experiments', gss_tol 
     IMAGE_RANGE = 255. # if defocus stack in [0-255]
     if defocus_stack.max() <= 1.5: # instead in [0-1]
         IMAGE_RANGE = 1.
-        print('Images in range [0-1]')
-    else:
+        if verbose:
+            print('Images in range [0-1]')
+    elif verbose:
         print('Images in range [0-255]')
     
     # precompute indices
@@ -68,22 +69,26 @@ def coordinate_descent(defocus_stack,  experiment_folder='experiments', gss_tol 
             aif = least_squares.least_squares(dpt, defocus_stack, indices=indices, template_A_stack=template_A_stack, maxiter=ls_maxiter)
         else:
             t0 = time.time()
-            aif = least_squares.bounded_fista_3d(dpt, defocus_stack, IMAGE_RANGE, indices=indices, template_A_stack=template_A_stack, maxiter=ls_maxiter)
-            print('FISTA duration', time.time()-t0)
+            aif = least_squares.bounded_fista_3d(dpt, defocus_stack, IMAGE_RANGE, indices=indices, template_A_stack=template_A_stack, maxiter=ls_maxiter, verbose=verbose)
+            if verbose:
+                print('FISTA duration', time.time()-t0)
         
-        print('\nAIF result range: [',aif.min(), ',', aif.max(),']')
+        if verbose:
+            print('\nAIF result range: [',aif.min(), ',', aif.max(),']')
         
         loss = mse_loss(forward_model.forward(dpt, aif, indices=indices, template_A_stack=template_A_stack), defocus_stack)
         losses.append(loss)
-        print('Loss:',loss, ', TV:',section_search.total_variation(aif))
+        if verbose:
+            print('Loss:',loss, ', TV:',section_search.total_variation(aif))
 
         if aif_method == 'ls':
             aif = np.clip(aif, 0, IMAGE_RANGE) # TODO: edit this depending on range used 
         
             loss = mse_loss(forward_model.forward(dpt, aif, indices=indices, template_A_stack=template_A_stack), defocus_stack)
             losses.append(loss)
-            print('Loss after clipping:',loss,', TV:',section_search.total_variation(aif))
-            print()
+            if verbose:
+                print('Loss after clipping:',loss,', TV:',section_search.total_variation(aif))
+                print()
 
         if save_plots or show_plots:
             plt.imshow(aif / IMAGE_RANGE)
@@ -98,7 +103,8 @@ def coordinate_descent(defocus_stack,  experiment_folder='experiments', gss_tol 
         # TV denoising
         # ------------------
         if aif_denoising_weight != None:
-            print('TV denoising')
+            if verbose:
+                print('TV denoising')
             aif = denoise_tv_bregman(aif, weight=aif_denoising_weight)
             if save_plots:
                 plt.imshow(aif / IMAGE_RANGE)
@@ -107,8 +113,9 @@ def coordinate_descent(defocus_stack,  experiment_folder='experiments', gss_tol 
     
             loss = mse_loss(forward_model.forward(dpt, aif, indices=indices, template_A_stack=template_A_stack), defocus_stack)
             losses.append(loss)
-            print('Loss after denoising:',loss,', TV:',section_search.total_variation(aif))
-            print()
+            if verbose:
+                print('Loss after denoising:',loss,', TV:',section_search.total_variation(aif))
+                print()
 
         # -----------------------
         # TV denoising of proxy
@@ -149,16 +156,18 @@ def coordinate_descent(defocus_stack,  experiment_folder='experiments', gss_tol 
                 
             loss = mse_loss(forward_model.forward(depth_map_golden, aif, indices=indices, template_A_stack=template_A_stack), defocus_stack)
             losses.append(loss)
-            print('Loss:',loss)
-            print()
+            if verbose:
+                print('Loss:',loss)
+                print()
         else:
             if not adaptive_grid:
                 a_b_init = None
                 # TODO: change grid search to opt
                 # if k > 1:
                 t0 = time.time()
-                depth_maps, Z, k_min_indices, all_losses = section_search.grid_search_opt_k(aif, defocus_stack, indices=indices, min_Z=min_Z, max_Z=max_Z, num_Z=num_Z, k=k, beta=beta, proxy=dpt_proxy, gamma=gamma, similarity_penalty=similarity_penalty, last_dpt=last_dpt, gss_window=gss_window)
-                print('GRID SEARCH DURATION', time.time()-t0)
+                depth_maps, Z, k_min_indices, all_losses = section_search.grid_search_opt_k(aif, defocus_stack, indices=indices, min_Z=min_Z, max_Z=max_Z, num_Z=num_Z, k=k, beta=beta, proxy=dpt_proxy, gamma=gamma, similarity_penalty=similarity_penalty, last_dpt=last_dpt, gss_window=gss_window, verbose=verbose)
+                if verbose:
+                    print('GRID SEARCH DURATION', time.time()-t0)
                 # else:    
                 #     depth_map, Z, argmin_indices, all_losses = section_search.grid_search_opt(aif, defocus_stack_torch, indices=indices, min_Z=min_Z, max_Z=max_Z, num_Z=num_Z, beta=beta, proxy=dpt_proxy, gamma=gamma, similarity_penalty=similarity_penalty, last_dpt=last_dpt)
                 
@@ -191,8 +200,9 @@ def coordinate_descent(defocus_stack,  experiment_folder='experiments', gss_tol 
             last_depth_map_golden = None
             for kk in range(k):
                 t0 = time.time()
-                depth_map_golden = section_search.golden_section_search(Z, k_min_indices[:,:,kk], aif, defocus_stack, indices=indices, template_A_stack=template_A_stack, window=gss_window, tolerance=gss_tol, a_b_init=a_b_init, beta=beta, proxy=dpt_proxy, gamma=gamma, similarity_penalty=similarity_penalty, last_dpt=last_dpt)
-                print('GSS DURATION', time.time()-t0)
+                depth_map_golden = section_search.golden_section_search(Z, k_min_indices[:,:,kk], aif, defocus_stack, indices=indices, template_A_stack=template_A_stack, window=gss_window, tolerance=gss_tol, a_b_init=a_b_init, beta=beta, proxy=dpt_proxy, gamma=gamma, similarity_penalty=similarity_penalty, last_dpt=last_dpt, verbose=verbose)
+                if verbose:
+                    print('GSS DURATION', time.time()-t0)
                 # chose which is better 
                 if last_depth_map_golden is None:
                     last_depth_map_golden = depth_map_golden
@@ -240,8 +250,9 @@ def coordinate_descent(defocus_stack,  experiment_folder='experiments', gss_tol 
         
         loss = mse_loss(forward_model.forward(dpt, aif, indices=indices, template_A_stack=template_A_stack), defocus_stack)
         losses.append(loss)
-        print('Loss:',loss,', TV:',section_search.total_variation(dpt))
-        print('\nDPT result range: [',dpt.min(), ',', dpt.max(),']')
+        if verbose:
+            print('Loss:',loss,', TV:',section_search.total_variation(dpt))
+            print('\nDPT result range: [',dpt.min(), ',', dpt.max(),']')
 
         
         # ---------------------
@@ -261,13 +272,15 @@ def coordinate_descent(defocus_stack,  experiment_folder='experiments', gss_tol 
     
             loss = mse_loss(forward_model.forward(dpt, aif, indices=indices, template_A_stack=template_A_stack), defocus_stack)
             losses.append(loss)
-            print('Loss after denoising:',loss,', TV:',section_search.total_variation(dpt))
-            print()
+            if verbose:
+                print('Loss after denoising:',loss,', TV:',section_search.total_variation(dpt))
+                print()
 
-        if proxy_opt:
+        if proxy_opt and verbose:
             print('(norm(dpt - proxy))^2:',np.linalg.norm(dpt - dpt_proxy)**2)
-        print()
-        print()
+        if verbose:
+            print()
+            print()
         return aif, dpt, dpt_proxy
 
     
@@ -294,7 +307,8 @@ def coordinate_descent(defocus_stack,  experiment_folder='experiments', gss_tol 
     
     if not least_squares_first and aif_init is None:
         # aif as median filter of stack
-        print('initializing aif to median filter of defocus stack')
+        if verbose:
+            print('initializing aif to median filter of defocus stack')
         aif = np.median(defocus_stack, axis=0)
     else:
         aif = aif_init
@@ -327,7 +341,8 @@ def coordinate_descent(defocus_stack,  experiment_folder='experiments', gss_tol 
     last_loss = float('inf')
     for i in range(num_epochs):
         
-        print('Iteration',i,'\n')
+        if verbose:
+            print('Iteration',i,'\n')
         
         if save_plots:
             iter_folder = os.path.join(experiment_folder,'iteration'+str(i))
@@ -336,7 +351,7 @@ def coordinate_descent(defocus_stack,  experiment_folder='experiments', gss_tol 
             iter_folder = None
 
         if i > 0:
-            last_loss = mse_loss(forward_model.forward(dpt, aif, indices=indices), defocus_stack)
+            last_loss = mse_loss(forward_model.forward(dpt, aif, indices=indices, template_A_stack=template_A_stack), defocus_stack)
 
         t0 = time.time()
         if least_squares_first:
@@ -345,7 +360,8 @@ def coordinate_descent(defocus_stack,  experiment_folder='experiments', gss_tol 
         else:
             aif, dpt, dpt_proxy = generate_DPT(aif, dpt, dpt_proxy, beta=beta, iter_folder=iter_folder, last_dpt=last_dpt)
             aif, dpt, dpt_proxy = generate_AIF(aif, dpt, dpt_proxy, ls_maxiter, iter_folder=iter_folder)
-        print('FULL ITER DURATION', time.time()-t0)
+        if verbose:
+            print('FULL ITER DURATION', time.time()-t0)
         
         # save images themselves
         if save_plots:
@@ -358,7 +374,8 @@ def coordinate_descent(defocus_stack,  experiment_folder='experiments', gss_tol 
 
         if ls_maxiter_multiplier != None:
             ls_maxiter = int(ls_maxiter * ls_maxiter_multiplier)
-            print('ls_maxiter updated to',ls_maxiter)
+            if verbose:
+                print('ls_maxiter updated to',ls_maxiter)
             # gss_tol = gss_tol / ls_maxiter_multiplier
             # print('gss_tol updated to', gss_tol)
 
@@ -398,14 +415,15 @@ def coordinate_descent(defocus_stack,  experiment_folder='experiments', gss_tol 
             with open(os.path.join(experiment_folder,"losses.txt"), "w") as file:
                 for j in range(len(losses)):
                     if j % dx == 0:
-                        file.write("iter "+str(j % dx)+":\n")
+                        file.write("iter "+str(j // dx)+":\n")
                     item = losses[j]
                     file.write(f"{item}\n")
         
-        print()
-        print()
-        print('--------------------------')
-        print()
+        if verbose:
+            print()
+            print()
+            print('--------------------------')
+            print()
 
 
     # OPTIONAL -- remove outliers

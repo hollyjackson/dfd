@@ -101,7 +101,7 @@ def k_min_indices_no_overlap(sorted_indices, k, gss_window=1):
 
 
 
-def grid_search_opt_k(gt_aif, defocus_stack, indices=None, min_Z = 0.1, max_Z = 10, num_Z = 100, k = 3, beta=0, proxy=None, gamma=0, similarity_penalty=False, last_dpt=None, gss_window=1):
+def grid_search_opt_k(gt_aif, defocus_stack, indices=None, min_Z = 0.1, max_Z = 10, num_Z = 100, k = 3, beta=0, proxy=None, gamma=0, similarity_penalty=False, last_dpt=None, gss_window=1, verbose=True):
     # try many values of Z
     Z = np.linspace(min_Z, max_Z, num_Z, dtype=np.float32)
 
@@ -113,7 +113,7 @@ def grid_search_opt_k(gt_aif, defocus_stack, indices=None, min_Z = 0.1, max_Z = 
 
     all_losses = np.zeros((width, height, num_Z), dtype=np.float32)
     # for i in range(num_Z):
-    for i in tqdm(range(num_Z), desc="Grid search".ljust(20), ncols=80):
+    for i in tqdm(range(num_Z), desc="Grid search".ljust(20), ncols=80, disable=(not verbose)):
         # print(i,'/',num_Z)
         r = forward_model.computer(np.array([[Z[i]]], dtype=np.float32), globals.Df)[...,None,None]
         # print(r)
@@ -137,7 +137,7 @@ def grid_search_opt_k(gt_aif, defocus_stack, indices=None, min_Z = 0.1, max_Z = 
     # print(k_min_indices.shape)
     
     depth_maps = Z[k_min_indices]
-    print(k_min_indices.shape, depth_maps.shape)
+    # print(k_min_indices.shape, depth_maps.shape)
     
     return depth_maps, Z, k_min_indices, all_losses
 
@@ -259,9 +259,10 @@ def dtype_report(tag, **arrs):
     print(f"[{tag}] {items}")
 
 def golden_section_search(Z, argmin_indices, gt_aif, defocus_stack, indices=None, template_A_stack=None,
-    window=1, tolerance=1e-5, convergence_error=0, max_iter=100, beta=0, proxy=None, gamma=0, similarity_penalty=False, last_dpt=None, a_b_init=None):
+    window=1, tolerance=1e-5, convergence_error=0, max_iter=100, beta=0, proxy=None, gamma=0, similarity_penalty=False, last_dpt=None, a_b_init=None, verbose=True):
     assert convergence_error >= 0 and convergence_error < 1
-    print("Golden-section search...")
+    if verbose:
+        print("\nGolden-section search...")
     
     # build a grid around each min
     if a_b_init is None:
@@ -271,7 +272,8 @@ def golden_section_search(Z, argmin_indices, gt_aif, defocus_stack, indices=None
     else:
         a, b = a_b_init
 
-    print('...searching for',(1 - convergence_error)*100,'% convergence')
+    if verbose:
+        print('...searching for',(1 - convergence_error)*100,'% convergence')
 
 
     c = b - (b - a) * invphi
@@ -335,11 +337,12 @@ def golden_section_search(Z, argmin_indices, gt_aif, defocus_stack, indices=None
 
         i += 1
 
-    if (i >= max_iter):
+    if (i >= max_iter) and verbose:
         print('Failed to converge after',i,'iterations')
         print(np.sum((b - a) <= tolerance) / a.size * 100, '% convergence achieved')
 
-    print("...done")
+    if verbose:
+        print("...done")
 
     dpt = (b + a) / 2
 

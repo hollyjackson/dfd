@@ -55,15 +55,15 @@ def approx_Lipschitz_constant(A, A_T, iters=15):
 
 
 
-def bounded_fista_3d(dpt, defocus_stack, IMAGE_RANGE, indices=None, template_A_stack=None, tol = 1e-6, maxiter = 1000, gt=None):
-    
-    print('Bounded FISTA...')
+def bounded_fista_3d(dpt, defocus_stack, IMAGE_RANGE, indices=None, template_A_stack=None, tol = 1e-6, maxiter = 1000, gt=None, verbose=True):
+
+    if verbose:
+        print('Bounded FISTA...')
 
     width, height = dpt.shape
     if indices is None:
         u, v, row, col, mask = forward_model.precompute_indices(width, height)
     else:
-        print('here')
         u, v, row, col, mask = indices
 
     # t0 = time.time()
@@ -116,7 +116,7 @@ def bounded_fista_3d(dpt, defocus_stack, IMAGE_RANGE, indices=None, template_A_s
     
     t = 1.0
         
-    progress = tqdm.trange(maxiter, desc="Optimizing", leave=True)        
+    progress = tqdm.trange(maxiter, desc="Optimizing", leave=True, disable=(not verbose))        
     for i in progress:#range(maxiter):
         # grad = A.T.dot(A.dot(aif) - b)
         # t0 = time.time()
@@ -156,7 +156,8 @@ def bounded_fista_3d(dpt, defocus_stack, IMAGE_RANGE, indices=None, template_A_s
         aif_norm = np.linalg.norm(aif_new - aif)
         # print('aif norm', time.time() - t0)
         if aif_norm < tol:
-            print('Achieved tolerance')
+            if verbose:
+                print('Achieved tolerance')
             break
 
         aif = aif_new
@@ -167,7 +168,8 @@ def bounded_fista_3d(dpt, defocus_stack, IMAGE_RANGE, indices=None, template_A_s
         Ay = np.column_stack((Ay0, Ay1, Ay2))
         # print('new Ay', time.time()-t0)
 
-    print('r1norm', np.linalg.norm(r), 'norm(x)', np.linalg.norm(aif))
+    if verbose:
+        print('r1norm', np.linalg.norm(r), 'norm(x)', np.linalg.norm(aif))
     
     return aif.reshape((width, height, 3))
 
