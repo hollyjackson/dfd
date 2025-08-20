@@ -146,7 +146,7 @@ def load_NYUv2_dpt(path_to_file, resize_frac=2):
     width, height = dpt.shape
     dpt /= 1e4  # scale depth values
     dpt = np.clip(dpt, 0.1, 10.0) # optionally clip
-    print(width, height)
+    # print(width, height)
     # resize with anti-aliasing
     if resize_frac != 1:
         dpt = skimage.transform.resize(
@@ -162,7 +162,7 @@ def load_NYUv2_dpt(path_to_file, resize_frac=2):
 def load_NYUv2_aif(path_to_file, resize_frac=2):
     aif = skimage.io.imread(path_to_file).astype(np.float32) / 255.0
     width, height, _ = aif.shape
-    print(width, height)
+    # print(width, height)
     # resize if needed
     if resize_frac != 1:
         aif = skimage.transform.resize(

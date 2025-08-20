@@ -17,7 +17,7 @@ import initialization
 # globals
 IMAGE_RANGE = 255.
 #FORWARD_KERNEL_TYPE = 'gaussian'
-EXPERIMENT_NAME = 'test-'
+EXPERIMENT_NAME = 'test2-'
 
 def load_image(image_number):
     globals.init_NYUv2()
@@ -43,7 +43,7 @@ def load_image(image_number):
     width, height = gt_dpt.shape
     
     max_kernel_size = utils.kernel_size_heuristic(width, height)
-    print('adaptive kernel size set to',max_kernel_size)
+    # print('adaptive kernel size set to',max_kernel_size)
     utils.update_max_kernel_size(max_kernel_size)
 
     return gt_aif, gt_dpt
@@ -114,7 +114,7 @@ def main():
     # coord descent
     dpt, aif, exp_folder = coord_descent(
         defocus_stack, save_plots = False,
-        num_epochs = 1,  least_squares_first = False,
+        num_epochs = 1, least_squares_first = False,
         vmin = gt_dpt.min(), vmax = gt_dpt.max()
     )
 

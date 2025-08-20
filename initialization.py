@@ -85,7 +85,7 @@ def mrf_optimization(defocus_stack, lmbda=0.05, sharpness_measure='laplacian'):
     # width x height x n_labels
     unary_cost = np.stack([compute_defocus_term(image, sharpness_measure=sharpness_measure) for image in defocus_stack], axis=2).astype(np.int32)
     # unary_cost = compute_unary(defocus_stack)
-    print(unary_cost.shape)
+    # print(unary_cost.shape)
     # pairwise cost matrix (n_labels x n_labels)
     pairwise_cost = lmbda * np.abs(np.subtract.outer(np.arange(n_labels), np.arange(n_labels))).astype(np.int32)
 
