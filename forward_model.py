@@ -58,7 +58,7 @@ def generate_mask(row_indices, col_indices, width, height):
     condition3 = col_indices.flatten() < 0
     condition4 = col_indices.flatten() >= height
     indices_to_delete = np.where(condition1 | condition2 | condition3 | condition4)
-    mask = np.ones(col_indices.flatten().shape[0], dtype=np.bool)
+    mask = np.ones(col_indices.flatten().shape[0], dtype=bool)
     mask[indices_to_delete] = False
 
     return mask

@@ -8,6 +8,7 @@ import globals
 import least_squares
 import section_search
 import torch
+import initialization
 
 import cv2 as cv
 import math
@@ -31,10 +32,9 @@ def coordinate_descent(defocus_stack,  experiment_folder='experiments', gss_tol 
 
     # important initializations ---------------------
     
-    if save_plots:
-        EXPERIMENT_NAME = experiment_name
-        experiment_folder = utils.create_experiment_folder(EXPERIMENT_NAME, base_folder=experiment_folder)
-    
+    EXPERIMENT_NAME = experiment_name
+    experiment_folder = utils.create_experiment_folder(EXPERIMENT_NAME, base_folder=experiment_folder)
+
     # if torch.is_tensor(defocus_stack):
     #     defocus_stack_torch = defocus_stack
     # else:
@@ -306,10 +306,10 @@ def coordinate_descent(defocus_stack,  experiment_folder='experiments', gss_tol 
             dpt_proxy = np.array(depth_init, dtype=np.float32)
     
     if not least_squares_first and aif_init is None:
-        # aif as median filter of stack
         if verbose:
-            print('initializing aif to median filter of defocus stack')
-        aif = np.median(defocus_stack, axis=0)
+            print('initializing aif')
+        #aif = np.median(defocus_stack, axis=0) # aif as median filter of stack
+        aif = initialization.compute_aif_initialization(defocus_stack, lmbda=0.05, sharpness_measure='sobel_grad')
     else:
         aif = aif_init
         
@@ -388,10 +388,11 @@ def coordinate_descent(defocus_stack,  experiment_folder='experiments', gss_tol 
         
 
         # loss plot
+        x = np.arange(len(losses))
+        dx = int(len(losses) / (i+1))
+        
         if save_plots:
             plt.figure(figsize=(8, 4))
-            x = np.arange(len(losses))
-            dx = int(len(losses) / (i+1))
             plt.plot(x, losses)
             plt.scatter(x[1::dx], losses[1::dx], color='red', marker='x', s=100, label="clipped aif")
             plt.xticks(x[::dx], labels=np.arange(len(x))[::dx]) # 6 pts per iter
@@ -402,7 +403,7 @@ def coordinate_descent(defocus_stack,  experiment_folder='experiments', gss_tol 
             plt.close()
     
             plt.figure(figsize=(8, 4))
-            x = np.arange(len(losses))
+            # x = np.arange(len(losses))
             plt.plot(x, [math.log(loss, 10) for loss in losses])
             plt.scatter(x[1::dx], [math.log(loss, 10) for loss in losses[1::dx]], color='red', marker='x', s=100, label="clipped aif")
             plt.xticks(x[::dx], labels=np.arange(len(x))[::dx]) # 6 pts per iter
@@ -412,13 +413,13 @@ def coordinate_descent(defocus_stack,  experiment_folder='experiments', gss_tol 
             plt.savefig(os.path.join(experiment_folder,'log_loss.png'))
             plt.close()
 
-            with open(os.path.join(experiment_folder,"losses.txt"), "w") as file:
-                for j in range(len(losses)):
-                    if j % dx == 0:
-                        file.write("iter "+str(j // dx)+":\n")
-                    item = losses[j]
-                    file.write(f"{item}\n")
-        
+        with open(os.path.join(experiment_folder,"losses.txt"), "w") as file:
+            for j in range(len(losses)):
+                if j % dx == 0:
+                    file.write("iter "+str(j // dx)+":\n")
+                item = losses[j]
+                file.write(f"{item}\n")
+    
         if verbose:
             print()
             print()
@@ -439,5 +440,5 @@ def coordinate_descent(defocus_stack,  experiment_folder='experiments', gss_tol 
             else:
                 plt.close()
         
-    return dpt, aif, ls_maxiter
+    return dpt, aif, ls_maxiter, experiment_folder
 

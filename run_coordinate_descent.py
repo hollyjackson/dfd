@@ -6,18 +6,18 @@ import matplotlib.pyplot as plt
 import utils
 import forward_model
 import globals
-import gradient_descent
+#import gradient_descent
 import least_squares
 import section_search
 import coordinate_descent
 import initialization
 
-import torch
+#import torch
 
 # globals
 IMAGE_RANGE = 255.
-FORWARD_KERNEL_TYPE = 'gaussian'
-EXPERIMENT_NAME = 'coord-descent-'
+#FORWARD_KERNEL_TYPE = 'gaussian'
+EXPERIMENT_NAME = 'test-'
 
 def load_image(image_number):
     globals.init_NYUv2()
@@ -25,8 +25,8 @@ def load_image(image_number):
     global EXPERIMENT_NAME
     EXPERIMENT_NAME += image_number
 
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    print(device)
+    #device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    #print(device)
     
     # load data 
     gt_aif, gt_dpt = utils.load_single_sample(sample=image_number, set='train', fs=5, res='half')
@@ -50,11 +50,11 @@ def load_image(image_number):
 
 def gt_defocus_stack(gt_dpt, gt_aif):
     # forward model (torch)
-    defocus_stack = forward_model.forward(gt_dpt, gt_aif, kernel=FORWARD_KERNEL_TYPE)
-    defocus_stack_torch = forward_model.forward_torch(gt_dpt, gt_aif, kernel=FORWARD_KERNEL_TYPE)#.float() / 255.0)
-    utils.plot_single_stack(defocus_stack_torch / IMAGE_RANGE, globals.Df)
+    defocus_stack = forward_model.forward(gt_dpt, gt_aif)
+#    defocus_stack_torch = forward_model.forward_torch(gt_dpt, gt_aif, kernel=FORWARD_KERNEL_TYPE)#.float() / 255.0)
+    utils.plot_single_stack(defocus_stack / IMAGE_RANGE, globals.Df)
     
-    return defocus_stack, defocus_stack_torch
+    return defocus_stack
 
 def aif_initialization(defocus_stack):
     # AIF initialization
@@ -69,23 +69,32 @@ def aif_initialization(defocus_stack):
 
     return aif_init
 
-def coord_descent(defocus_stack, least_squares_first = True, depth_init = 1, aif_init = None,
+def coord_descent(defocus_stack, num_epochs = 40,
+                  save_plots = True, 
+                  least_squares_first = False,
+                  depth_init = None, aif_init = None,
                   vmin = 0.1, vmax = 10):
     # -------------------
     # COORDINATE DESCENT
     # -------------------
     
-    dpt, aif, _ = coordinate_descent.coordinate_descent(defocus_stack, experiment_folder='/data/holly_jackson/experiments', show_plots=False,
-                                                     save_plots=True, experiment_name = EXPERIMENT_NAME, 
-                                                        num_epochs=40,
-                                                     least_squares_first=least_squares_first, depth_init=depth_init,
-                                                     aif_init=aif_init, 
-                                                        k = 3, aif_method='fista', finite_differences=False, num_Z=100, 
-                                                     ls_maxiter=200, ls_maxiter_multiplier=1.05,#1.075, 
-                                                     use_CUDA=False, vmin = vmin, vmax = vmax)
+    dpt, aif, _, exp_folder = coordinate_descent.coordinate_descent(
+            defocus_stack,
+            experiment_folder='/data/holly_jackson/experiments',
+            show_plots=False, save_plots=save_plots,
+            experiment_name = EXPERIMENT_NAME, 
+            num_epochs = num_epochs,
+            least_squares_first = least_squares_first,
+            depth_init = depth_init, aif_init = aif_init, 
+            k = 1, aif_method = 'fista',
+            finite_differences = False, num_Z = 100, 
+            ls_maxiter = 200, ls_maxiter_multiplier = 1.05, 
+            vmin = vmin, vmax = vmax,
+            verbose = False
+    )
 
     
-    return dpt, aif
+    return dpt, aif, exp_folder
 
 
 def main():
@@ -100,16 +109,31 @@ def main():
     gt_aif, gt_dpt = load_image(image_number)
 
     # generate defocus stack
-    defocus_stack, defocus_stack_torch = gt_defocus_stack(gt_dpt, gt_aif)
+    defocus_stack = gt_defocus_stack(gt_dpt, gt_aif)
 
     # coord descent
-    dpt, aif = coord_descent(defocus_stack, vmin=gt_dpt.min(), vmax=gt_dpt.max(),
-                             depth_init=1)
+    dpt, aif, exp_folder = coord_descent(
+        defocus_stack, save_plots = False,
+        num_epochs = 1,  least_squares_first = False,
+        vmin = gt_dpt.min(), vmax = gt_dpt.max()
+    )
 
-    # final metrics
-    print('RMS', utils.compute_RMS(dpt.numpy(), gt_dpt.numpy()))
-    print('Rel', utils.compute_Rel(dpt.numpy(), gt_dpt.numpy()))
-    print(utils.compute_accuracy_metrics(dpt.numpy(), gt_dpt.numpy()))
+    # save final 
+    utils.save_dpt(exp_folder, 'dpt', dpt)
+    # print(aif.min(), aif.max())
+    # assert aif.min() > 0 and aif.max() > 1 and aif.max() <= 255 # remove later
+    utils.save_aif(exp_folder, 'aif', aif)
+
+    # final metrics save to file
+    rms = utils.compute_RMS(dpt, gt_dpt)
+    rel = utils.compute_Rel(dpt, gt_dpt)
+    deltas = utils.compute_accuracy_metrics(dpt, gt_dpt)
+    outfile = os.path.join(exp_folder, "accuracy_metrics.txt")
+    delta_str = ", ".join(f"{float(deltas[d]):.6f}" for d in sorted(deltas.keys()))
+    with open(outfile, "w", encoding="utf-8") as f:
+        f.write(f"RMS: {float(rms):.6f}\n")
+        f.write(f"Rel: {float(rel):.6f}\n")
+        f.write(f"Accuracy (δ1, δ2, δ3): {delta_str}\n")
 
 if __name__ == "__main__":
     main()

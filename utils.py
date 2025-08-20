@@ -148,13 +148,14 @@ def load_NYUv2_dpt(path_to_file, resize_frac=2):
     dpt = np.clip(dpt, 0.1, 10.0) # optionally clip
     print(width, height)
     # resize with anti-aliasing
-    dpt = skimage.transform.resize(
-        dpt,
-        output_shape=(width//resize_frac,height//resize_frac), # (height, width)
-        order=1,                  # bilinear interpolation
-        anti_aliasing=True,
-        preserve_range=True       # don't normalize to [0, 1]
-    )
+    if resize_frac != 1:
+        dpt = skimage.transform.resize(
+            dpt,
+            output_shape=(width//resize_frac,height//resize_frac), # (height, width)
+            order=1,                  # bilinear interpolation
+            anti_aliasing=True,
+            preserve_range=True       # don't normalize to [0, 1]
+        )
     # convert to torch tensor
     return dpt#torch.from_numpy(dpt)
 
@@ -163,13 +164,14 @@ def load_NYUv2_aif(path_to_file, resize_frac=2):
     width, height, _ = aif.shape
     print(width, height)
     # resize if needed
-    aif = skimage.transform.resize(
-        aif,
-        output_shape=(width//resize_frac,height//resize_frac), # (height, width)
-        order=1,                  # bilinear interpolation
-        anti_aliasing=True,
-        preserve_range=True       # keep values in [0, 255] if original was uint8
-    )
+    if resize_frac != 1:
+        aif = skimage.transform.resize(
+            aif,
+            output_shape=(width//resize_frac,height//resize_frac), # (height, width)
+            order=1,                  # bilinear interpolation
+            anti_aliasing=True,
+            preserve_range=True       # keep values in [0, 255] if original was uint8
+        )
     # convert to torch tensor
     return aif#torch.from_numpy(aif)
 
