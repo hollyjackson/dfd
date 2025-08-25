@@ -5,3 +5,5 @@ __pycache__/
 .ipynb_checkpoints/
 NYUv2/
 pyGCO
+*.csv
+*.sh

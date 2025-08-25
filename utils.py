@@ -248,11 +248,17 @@ def compute_Rel(pred, gt):
     rel = np.abs(pred - gt) / (np.abs(gt) + 1e-8)
     return np.mean(rel)
 
+
+def compute_AbsRel(pred, gt):
+    # absolute Relative error: mean(|pred - gt| / gt).
+    rel = np.abs(pred - gt) / (gt + 1e-8)
+    return np.mean(rel)
+
 def compute_accuracy_metrics(pred, gt):
     # Returns δ1, δ2, δ3 as defined by Eigen et al.
     # δ_k = fraction of pixels with max(pred/gt, gt/pred) < 1.25^k
     
-    ratio = np.maximum(pred / gt, gt / pred)
+    ratio = np.maximum(pred / (gt+1e-8), gt / (pred+1e-8))
     delta1 = np.mean(ratio < 1.25)
     delta2 = np.mean(ratio < 1.25**2)
     delta3 = np.mean(ratio < 1.25**3)

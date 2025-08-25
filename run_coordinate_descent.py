@@ -17,7 +17,7 @@ import initialization
 # globals
 IMAGE_RANGE = 255.
 #FORWARD_KERNEL_TYPE = 'gaussian'
-EXPERIMENT_NAME = 'test2-'
+EXPERIMENT_NAME = 'all-test-'
 
 def load_image(image_number):
     globals.init_NYUv2()
@@ -29,7 +29,7 @@ def load_image(image_number):
     #print(device)
     
     # load data 
-    gt_aif, gt_dpt = utils.load_single_sample(sample=image_number, set='train', fs=5, res='half')
+    gt_aif, gt_dpt = utils.load_single_sample(sample=image_number, set='test', fs=5, res='half')
     # gt_aif, gt_dpt, _ = utils.load_sample_image(fs=5, res='half')
     gt_aif = gt_aif * IMAGE_RANGE
     
@@ -114,7 +114,7 @@ def main():
     # coord descent
     dpt, aif, exp_folder = coord_descent(
         defocus_stack, save_plots = False,
-        num_epochs = 1, least_squares_first = False,
+        num_epochs = 40, least_squares_first = False,
         vmin = gt_dpt.min(), vmax = gt_dpt.max()
     )
 
@@ -126,7 +126,7 @@ def main():
 
     # final metrics save to file
     rms = utils.compute_RMS(dpt, gt_dpt)
-    rel = utils.compute_Rel(dpt, gt_dpt)
+    rel = utils.compute_AbsRel(dpt, gt_dpt)
     deltas = utils.compute_accuracy_metrics(dpt, gt_dpt)
     outfile = os.path.join(exp_folder, "accuracy_metrics.txt")
     delta_str = ", ".join(f"{float(deltas[d]):.6f}" for d in sorted(deltas.keys()))

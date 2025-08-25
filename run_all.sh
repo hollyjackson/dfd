@@ -135,6 +135,9 @@ python run_coordinate_descent.py 0234 &
 python run_coordinate_descent.py 0235 &
 python run_coordinate_descent.py 0236 &
 python run_coordinate_descent.py 0237 &
+wait
+
+echo 'Starting batch 2/6'
 python run_coordinate_descent.py 0238 &
 python run_coordinate_descent.py 0239 &
 python run_coordinate_descent.py 0240 &
@@ -145,9 +148,6 @@ python run_coordinate_descent.py 0244 &
 python run_coordinate_descent.py 0245 &
 python run_coordinate_descent.py 0246 &
 python run_coordinate_descent.py 0247 &
-wait
-
-echo 'Starting batch 2/6'
 python run_coordinate_descent.py 0248 &
 python run_coordinate_descent.py 0249 &
 python run_coordinate_descent.py 0251 &
@@ -272,6 +272,9 @@ python run_coordinate_descent.py 0436 &
 python run_coordinate_descent.py 0437 &
 python run_coordinate_descent.py 0438 &
 python run_coordinate_descent.py 0439 &
+wait
+
+echo 'Starting batch 3/6'
 python run_coordinate_descent.py 0440 &
 python run_coordinate_descent.py 0449 &
 python run_coordinate_descent.py 0450 &
@@ -292,9 +295,6 @@ python run_coordinate_descent.py 0478 &
 python run_coordinate_descent.py 0479 &
 python run_coordinate_descent.py 0480 &
 python run_coordinate_descent.py 0481 &
-wait
-
-echo 'Starting batch 3/6'
 python run_coordinate_descent.py 0482 &
 python run_coordinate_descent.py 0483 &
 python run_coordinate_descent.py 0484 &
@@ -409,6 +409,9 @@ python run_coordinate_descent.py 0684 &
 python run_coordinate_descent.py 0685 &
 python run_coordinate_descent.py 0691 &
 python run_coordinate_descent.py 0692 &
+wait
+
+echo 'Starting batch 4/6'
 python run_coordinate_descent.py 0695 &
 python run_coordinate_descent.py 0696 &
 python run_coordinate_descent.py 0700 &
@@ -439,9 +442,6 @@ python run_coordinate_descent.py 0745 &
 python run_coordinate_descent.py 0746 &
 python run_coordinate_descent.py 0747 &
 python run_coordinate_descent.py 0748 &
-wait
-
-echo 'Starting batch 4/6'
 python run_coordinate_descent.py 0749 &
 python run_coordinate_descent.py 0750 &
 python run_coordinate_descent.py 0751 &
@@ -546,6 +546,9 @@ python run_coordinate_descent.py 0923 &
 python run_coordinate_descent.py 0924 &
 python run_coordinate_descent.py 0925 &
 python run_coordinate_descent.py 0929 &
+wait
+
+echo 'Starting batch 5/6'
 python run_coordinate_descent.py 0930 &
 python run_coordinate_descent.py 0931 &
 python run_coordinate_descent.py 0936 &
@@ -586,9 +589,6 @@ python run_coordinate_descent.py 0988 &
 python run_coordinate_descent.py 0989 &
 python run_coordinate_descent.py 0990 &
 python run_coordinate_descent.py 0996 &
-wait
-
-echo 'Starting batch 5/6'
 python run_coordinate_descent.py 0997 &
 python run_coordinate_descent.py 0998 &
 python run_coordinate_descent.py 0999 &
@@ -683,6 +683,9 @@ python run_coordinate_descent.py 1178 &
 python run_coordinate_descent.py 1185 &
 python run_coordinate_descent.py 1186 &
 python run_coordinate_descent.py 1187 &
+wait
+
+echo 'Starting batch 6/6'
 python run_coordinate_descent.py 1188 &
 python run_coordinate_descent.py 1189 &
 python run_coordinate_descent.py 1190 &
@@ -733,9 +736,6 @@ python run_coordinate_descent.py 1300 &
 python run_coordinate_descent.py 1301 &
 python run_coordinate_descent.py 1309 &
 python run_coordinate_descent.py 1310 &
-wait
-
-echo 'Starting batch 6/6'
 python run_coordinate_descent.py 1311 &
 python run_coordinate_descent.py 1312 &
 python run_coordinate_descent.py 1313 &
