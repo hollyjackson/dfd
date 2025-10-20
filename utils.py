@@ -146,32 +146,34 @@ def load_NYUv2_dpt(path_to_file, resize_frac=2):
     width, height = dpt.shape
     dpt /= 1e4  # scale depth values
     dpt = np.clip(dpt, 0.1, 10.0) # optionally clip
-    print(width, height)
+    # print(width, height)
     # resize with anti-aliasing
-    dpt = skimage.transform.resize(
-        dpt,
-        output_shape=(width//resize_frac,height//resize_frac), # (height, width)
-        order=1,                  # bilinear interpolation
-        anti_aliasing=True,
-        preserve_range=True       # don't normalize to [0, 1]
-    )
+    if resize_frac != 1:
+        dpt = skimage.transform.resize(
+            dpt,
+            output_shape=(width//resize_frac,height//resize_frac), # (height, width)
+            order=1,                  # bilinear interpolation
+            anti_aliasing=True,
+            preserve_range=True       # don't normalize to [0, 1]
+        )
     # convert to torch tensor
-    return torch.from_numpy(dpt)
+    return dpt#torch.from_numpy(dpt)
 
 def load_NYUv2_aif(path_to_file, resize_frac=2):
     aif = skimage.io.imread(path_to_file).astype(np.float32) / 255.0
     width, height, _ = aif.shape
-    print(width, height)
+    # print(width, height)
     # resize if needed
-    aif = skimage.transform.resize(
-        aif,
-        output_shape=(width//resize_frac,height//resize_frac), # (height, width)
-        order=1,                  # bilinear interpolation
-        anti_aliasing=True,
-        preserve_range=True       # keep values in [0, 255] if original was uint8
-    )
+    if resize_frac != 1:
+        aif = skimage.transform.resize(
+            aif,
+            output_shape=(width//resize_frac,height//resize_frac), # (height, width)
+            order=1,                  # bilinear interpolation
+            anti_aliasing=True,
+            preserve_range=True       # keep values in [0, 255] if original was uint8
+        )
     # convert to torch tensor
-    return torch.from_numpy(aif)
+    return aif#torch.from_numpy(aif)
 
 def load_single_sample(sample='0045', set='train', fs=5, res='half'):
     assert fs == 5 or fs == 10
@@ -246,11 +248,17 @@ def compute_Rel(pred, gt):
     rel = np.abs(pred - gt) / (np.abs(gt) + 1e-8)
     return np.mean(rel)
 
+
+def compute_AbsRel(pred, gt):
+    # absolute Relative error: mean(|pred - gt| / gt).
+    rel = np.abs(pred - gt) / (gt + 1e-8)
+    return np.mean(rel)
+
 def compute_accuracy_metrics(pred, gt):
     # Returns δ1, δ2, δ3 as defined by Eigen et al.
     # δ_k = fraction of pixels with max(pred/gt, gt/pred) < 1.25^k
     
-    ratio = np.maximum(pred / gt, gt / pred)
+    ratio = np.maximum(pred / (gt+1e-8), gt / (pred+1e-8))
     delta1 = np.mean(ratio < 1.25)
     delta2 = np.mean(ratio < 1.25**2)
     delta3 = np.mean(ratio < 1.25**3)
@@ -258,11 +266,11 @@ def compute_accuracy_metrics(pred, gt):
     return {"delta1": delta1, "delta2": delta2, "delta3": delta3}
 
 def save_dpt(path, fn, dpt):
-    dpt_scaled = (dpt.numpy() * 1e4).astype(np.float32)
+    dpt_scaled = (dpt * 1e4).astype(np.float32)
     skimage.io.imsave(os.path.join(path, fn + '.tiff'), dpt_scaled)
 
 def save_aif(path, fn, aif):
-    skimage.io.imsave(os.path.join(path, fn + '.tiff'), aif.numpy().squeeze().astype(np.float32))
+    skimage.io.imsave(os.path.join(path, fn + '.tiff'), aif.squeeze().astype(np.float32))
 
 def load_sample_image(fs=5, res='half'):
     assert fs == 5 or fs == 10
@@ -270,7 +278,7 @@ def load_sample_image(fs=5, res='half'):
     
     ext = str(fs)
     if fs == 10:
-        globals.Df = torch.tensor([0.5, 1, 1.25, 1.5, 1.75, 2, 2.5, 3, 4, 6])  # m 
+        globals.Df = np.array([0.5, 1, 1.25, 1.5, 1.75, 2, 2.5, 3, 4, 6], dtpe=np.float32)  # m 
     if res == 'half':
         ext += '_halfres'
     
@@ -361,3 +369,29 @@ def kernel_size_heuristic(width, height):
     if size % 2 == 0:
         return size + 1
     return size
+
+
+def plot_grid_search_on_pixel(i, j, Z, all_losses, gt_dpt=None):
+
+    plt.figure(figsize=(10,5))
+
+    plt.plot(Z, all_losses[i, j, :], label='Loss Curve',
+            linestyle='-', marker='.', markersize=4, color='black')
+
+    if gt_dpt is not None:
+        plt.scatter([gt_dpt[i,j]], [0],
+                color='red', marker='x', s=100, label='Ground Truth Depth')
+            
+    min_loss_idx = np.argmin(all_losses[i,j])
+    plt.scatter([Z[min_loss_idx]], [all_losses[i,j,min_loss_idx]], 
+            color='green', marker='x', s=100, label='Depth with Min Loss')
+    
+    plt.xticks(Z[::2], labels=np.round(Z[::2], 2), rotation=45)
+    plt.xlabel('Depth (m)')
+    plt.ylabel('MSE between Predicted and Ground Truth Defocus Stack')
+    plt.title(f'Pixel at {(i, j)}')
+    
+    plt.legend()
+    
+    plt.tight_layout()
+    plt.show()
