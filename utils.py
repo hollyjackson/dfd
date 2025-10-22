@@ -10,6 +10,8 @@ import skimage
 from PIL import Image
 import cv2
 
+import OpenEXR
+
 import torch
 torch.cuda.empty_cache()
 import torch_sparse
@@ -18,13 +20,15 @@ import globals
 
 def get_worst_diff_pixels(recon, gt, num_worst_pixels = 5, vmin=0.7, vmax=1.9):
 
-    diff = torch.abs(recon - gt)
-    
-    worst_indices = torch.topk(diff.view(-1), num_worst_pixels).indices
+    diff = np.abs(recon - gt)
+
+    worst_indices = np.argpartition(diff.ravel(), -num_worst_pixels)[-num_worst_pixels:]
+    worst_indices = worst_indices[np.argsort(diff.ravel()[worst_indices])[::-1]]
+    # worst_indices = torch.topk(diff.view(-1), num_worst_pixels).indices
     worst_coords = [(idx // diff.shape[1], idx % diff.shape[1]) for idx in worst_indices]
 
-    plt.imshow(recon.numpy(),vmin=vmin, vmax=vmax)
-    plt.scatter([y.item() for x, y in worst_coords], [x.item() for x, y in worst_coords], color='red', marker='x', s=100, label='Worst Diff Pixels')
+    plt.imshow(recon,vmin=vmin, vmax=vmax)
+    plt.scatter([y for x, y in worst_coords], [x for x, y in worst_coords], color='red', marker='x', s=100, label='Worst Diff Pixels')
     plt.title('Worst Difference Pixels Over Image')
     plt.legend()
     plt.show()
@@ -239,6 +243,37 @@ def load_single_sample(sample='0045', set='train', fs=5, res='half'):
     return aif, dpt#, gt_defocus_stack
 
 
+def load_single_sample_DefocusNet(sample='000373'):
+    data_path = os.path.join(os.getcwd(),'DefocusNet')
+
+    # get depth map
+    exr_name = sample + 'Dpt.exr'
+    dpt = load_dpt_DefocusNet(os.path.join(data_path, exr_name))
+
+    # get defocus stack
+    filenames = [f"{sample}_{i:02d}All.tif" for i in range(5)]
+    paths = sorted([os.path.join(data_path, name) for name in filenames if os.path.exists(os.path.join(data_path, name))])
+    assert len(paths) == 5 # expecting 5 images in focal stack
+    
+    defocus_stack = []
+    for path_to_image in paths:
+        im = np.array(Image.open(path_to_image), dtype=np.float32) / 255.
+        defocus_stack.append(im)
+    defocus_stack = np.stack(defocus_stack, 0)
+    
+    return dpt, defocus_stack
+
+
+def load_dpt_DefocusNet(img_dpt_path):
+    # modified from defocus-net/source/util_func.py
+    dpt_img = OpenEXR.InputFile(img_dpt_path)
+    dw = dpt_img.header()['dataWindow']
+    size = (dw.max.x - dw.min.x + 1, dw.max.y - dw.min.y + 1)
+    (r, g, b) = dpt_img.channels("RGB")
+    dpt = np.fromstring(r, dtype=np.float16)
+    dpt.shape = (size[1], size[0])
+    return dpt
+
 def compute_RMS(pred, gt):
     diff_sq = (pred - gt) ** 2
     return np.sqrt(np.mean(diff_sq))
@@ -371,7 +406,45 @@ def kernel_size_heuristic(width, height):
     return size
 
 
-def plot_grid_search_on_pixel(i, j, Z, all_losses, gt_dpt=None):
+def strongest_curvature_region(i, j, all_losses, window=11):
+    window = int(window)
+    if window < 1:
+        raise ValueError("window must be >= 1")
+    if window % 2 == 0:
+        window += 1
+        
+    losses = all_losses[i, j]
+    d2 = np.gradient(np.gradient(losses, edge_order=2), edge_order=2)
+
+    # lets try to get a more accurate second deriv
+
+    # # approach 1: cdsm
+    # #First derivatives:
+    # df = np.diff(losses)
+    # cf = np.convolve(losses, [1,-1],'same')
+    # gf = ndimage.gaussian_filter1d(losses, sigma=1, order=1, mode='wrap')
+    
+    # #Second derivatives:
+    # ddf = np.diff(losses, 2)
+    # ccf = np.convolve(losses, [1, -2, 1],'same')
+    # ggf = ndimage.gaussian_filter1d(losses, sigma=1, order=2, mode='wrap')
+
+
+    # approach 2:
+    d_savgol_filter = scipy.signal.savgol_filter(losses, window_length=11, polyorder=3, deriv=1, delta=1, mode='interp')
+    d2_savgol_filter = scipy.signal.savgol_filter(losses, window_length=11, polyorder=3, deriv=2, delta=1, mode='interp')
+
+
+    kernel = np.ones(window) / window
+    avg_d2 = np.convolve(d2, kernel, mode="same")
+
+    # region with most negative average curvature
+    # offset = (window - 1) // 2
+    idx_center_region = int(np.argmax(d2)) # concave up/positive second deriv (local min region)
+    # idx_center_region = min_idx + offset
+    return idx_center_region, d2, d_savgol_filter, d2_savgol_filter
+    
+def plot_grid_search_on_pixel(i, j, Z, all_losses, gt_dpt=None, k_min_indices=None):
 
     plt.figure(figsize=(10,5))
 
@@ -379,13 +452,56 @@ def plot_grid_search_on_pixel(i, j, Z, all_losses, gt_dpt=None):
             linestyle='-', marker='.', markersize=4, color='black')
 
     if gt_dpt is not None:
+        # get interpolated loss value
+        # idx_b = np.searchsorted(Z, gt_dpt[i, j])
+        # idx_a = idx_b - 1
+        # c = (gt_dpt[i,j] - Z[idx_a]) / (Z[idx_b] - Z[idx_a])
+        # interpolated_val = c * Z[idx_a] + (1-c) * Z[idx_b]
         plt.scatter([gt_dpt[i,j]], [0],
                 color='red', marker='x', s=100, label='Ground Truth Depth')
             
-    min_loss_idx = np.argmin(all_losses[i,j])
-    plt.scatter([Z[min_loss_idx]], [all_losses[i,j,min_loss_idx]], 
-            color='green', marker='x', s=100, label='Depth with Min Loss')
+    if k_min_indices is None:
+        min_loss_idx = np.argmin(all_losses[i,j])
+        plt.scatter([Z[min_loss_idx]], [all_losses[i,j,min_loss_idx]], 
+                color='green', marker='x', s=100, label='Depth with Min Loss')
+    else:
+        for k in range(len(k_min_indices)):
+            plt.scatter([Z[k_min_indices[k]]], [all_losses[i,j,k_min_indices[k]]],
+                        color='green', marker='x', s=100, label='Depth with '+str(k)+' Min Loss')
+
+    idx_center_point, d2, d_savgol_filter, d2_savgol_filter = strongest_curvature_region(i, j, all_losses, window=5)
+    # plt.scatter([Z[idx_center_point]], [all_losses[i,j,idx_center_point]], 
+    #         color='blue', marker='x', s=100, label='Depth with Most Neg 2nd Deriv')
     
+    # d = np.gradient(all_losses[i,j], edge_order=2)
+    # local_min_candidates = np.where(abs(d_savgol_filter) < 0.05)[0]
+    # local_min = local_min_candidates[np.argmax(d2_savgol_filter[local_min_candidates])]
+    # for idx in np.argsort(abs(d)):
+    #     if d2[idx] > 0:
+    #         local_min = idx
+    #         break
+    plt.plot(Z, d_savgol_filter, label='1st deriv',
+            linestyle='-', marker='.', markersize=4, color='cyan')
+    plt.plot(Z, d2_savgol_filter, label='2nd deriv',
+            linestyle='-', marker='.', markersize=4, color='blue')
+    plt.plot(Z[1:]-(3-0.1)/100/2, np.diff(all_losses[i,j]), label='diff',
+            linestyle='-', marker='.', markersize=4, color='green')
+
+    # find where the derivative passes over to 0
+    diff = np.diff(all_losses[i,j])
+    
+    cross_indices = np.where(np.sign(diff[:-1]) * np.sign(diff[1:]) < 0)[0] + 1
+                   
+    # cross_indices = np.where(np.sign(d_savgol_filter[:-1]) * np.sign(d_savgol_filter[1:]) < 0)[0]
+    for idx in cross_indices:
+        # print(idx, Z[idx], d_savgol_filter[idx], d_savgol_filter[idx+1])
+        print(idx, Z[idx], diff[idx], diff[idx+1])
+    
+    local_min = cross_indices[np.argmax(d2_savgol_filter[cross_indices])]
+
+    # plt.scatter(Z[cross_indices], all_losses[i,j,cross_indices], color='purple', marker='x', s=100, label='crossings')
+    plt.scatter([Z[local_min]], [all_losses[i,j,local_min]], color='purple', marker='x', s=100, label='local min')
+        
     plt.xticks(Z[::2], labels=np.round(Z[::2], 2), rotation=45)
     plt.xlabel('Depth (m)')
     plt.ylabel('MSE between Predicted and Ground Truth Defocus Stack')

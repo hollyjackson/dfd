@@ -4,6 +4,7 @@ experiments/
 __pycache__/
 .ipynb_checkpoints/
 NYUv2/
+DefocusNet/
 pyGCO
 *.csv
 *.sh

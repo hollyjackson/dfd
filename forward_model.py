@@ -96,7 +96,6 @@ def computer(dpt, Df):
     if not isinstance(Df, np.ndarray):
         Df = Df.numpy().astype(np.float32)
     Df_expanded = Df.reshape(1, 1, -1)
-
     # compute CoC
     CoC = ((globals.D) 
         * (np.abs(dpt[...,None] - Df_expanded) / (dpt[...,None]+1e-8)) 
@@ -104,7 +103,9 @@ def computer(dpt, Df):
     r = CoC / 2. / globals.ps
 
     # threshold
-    r[np.where(r < 2)] = 2
+    # r[np.where(r < 2)] = 2 # was used for nyuv2
+    r[np.where(r < globals.thresh)] = globals.thresh
+
     
     return r
 
