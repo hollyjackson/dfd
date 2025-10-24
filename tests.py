@@ -22,7 +22,13 @@ def test_forward_model():
     defocus_stack = forward_model.forward_torch(dpt, aif)
     utils.plot_stacks_side_by_side(gt_defocus_stack, defocus_stack, globals.Df)
 
-
+def test_windowed_mse():
+    defocus_stack_test = np.random.rand(5, 256, 256, 3) * 255.
+    pred = np.random.rand(5, 256, 256, 3) * 255.
+    losses_1 = section_search.windowed_mse(defocus_stack_test, pred, window_size=3)
+    losses_2 = section_search.windowed_mse_v2(defocus_stack_test, pred, window_size=3)
+    
+    assert np.allclose(losses_1, losses_2, atol=1e-6)
 
 def test_least_squares():
     criterion = torch.nn.MSELoss()

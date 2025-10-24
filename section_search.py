@@ -53,7 +53,47 @@ def compute_tv_map(image, patch_size = None):
 #     loss = forward_model.mse_loss(pred, gt)
 #     return loss#.item()
 
-def objective_full(depth_map, gt_aif, defocus_stack, indices=None, template_A_stack=None, pred=None, beta=0, proxy=None, gamma=0, similarity_penalty=False, last_dpt=None): 
+def windowed_mse_v2(defocus_stack, pred, window_size=3):
+    # brute force version (slow), keep for testing
+    rad = window_size // 2
+    if rad % 2 == 0:
+        rad += 1
+    # rad = globals.MAX_KERNEL_SIZE // 2
+    _, width, height, _ = defocus_stack.shape
+    losses = np.zeros((width, height), dtype=np.float32)
+    for i in range(width):
+        for j in range(height):
+            i_start = max(0, i-rad)
+            i_end = min(width-1, i+rad) + 1
+            j_start = max(0, j-rad)
+            j_end = min(height-1, j+rad) + 1
+            gt = defocus_stack[:,i_start:i_end,j_start:j_end,:]
+            p = pred[:,i_start:i_end,j_start:j_end,:]
+            losses[i,j] = np.mean((gt-p)**2)
+    return losses
+
+def windowed_mse(defocus_stack, pred, window_size=3):
+    rad = window_size // 2
+    if rad % 2 == 0:
+        rad += 1
+    # rad = globals.MAX_KERNEL_SIZE // 2
+    _, width, height, _ = defocus_stack.shape
+    mse = np.mean((defocus_stack - pred)**2, axis=(0, -1))
+    losses = np.zeros((width, height), dtype=np.float32)
+    denom = np.zeros((width, height), dtype=np.float32)
+    row = np.arange(width)
+    col = np.arange(height)
+    for i in range(-rad, rad+1):
+        for j in range(-rad, rad+1):
+            i_start = -i if i < 0 else 0
+            i_end = width-i if i > 0 else width
+            j_start = -j if j < 0 else 0
+            j_end = height-j if j > 0 else height
+            losses[i_start:i_end, j_start:j_end] += mse[i_start+i:i_end+i, j_start+j:j_end+j]
+            denom[i_start:i_end, j_start:j_end] += 1
+    return losses / denom
+    
+def objective_full(depth_map, gt_aif, defocus_stack, indices=None, template_A_stack=None, pred=None, beta=0, proxy=None, gamma=0, similarity_penalty=False, last_dpt=None, windowed=False): 
 
     # if isinstance(depth_map, np.ndarray):
     #     depth_map_torch = torch.from_numpy(depth_map).to(defocus_stack_torch.device)
@@ -64,6 +104,8 @@ def objective_full(depth_map, gt_aif, defocus_stack, indices=None, template_A_st
     # loss = torch.nn.functional.mse_loss(defocus_stack_torch, pred)
     # return loss.item()
     loss = np.mean((defocus_stack - pred)**2, axis=(0, -1))
+    if windowed:
+        loss = windowed_mse(defocus_stack, pred)
     if proxy is not None:
         # loss += beta * (depth_map_torch - proxy)**2
         loss += beta * np.linalg.norm(depth_map - proxy)**2
@@ -99,7 +141,68 @@ def k_min_indices_no_overlap(sorted_indices, k, gss_window=1):
         
     return k_min_indices
 
+# def new_local_min_heuristic_vec(all_losses):
+#     # TODO -- takes forever, need to optimize if i actually want to keep this
 
+#     width, height, num_Z = all_losses.shape
+#     local_mins = np.zeros((width, height), dtype=int)
+#     sorted_indices = np.argsort(all_losses, axis=-1)
+
+#     window_length = int(0.1 * num_Z)
+#     if window_length < 5:
+#         window_length = 5
+#     if window_length % 2 == 0:
+#         window_length += 1
+
+#     diff = np.diff(all_losses, axis=-1)
+#     # d2 = np.gradient(np.gradient(losses, edge_order=2, axis=-1), edge_order=2, axis=-1)
+#     d2_savgol_filter = scipy.signal.savgol_filter(all_losses, axis=-1, window_length=window_length, polyorder=3, deriv=2, delta=1, mode='interp')
+#     # cross_indices = np.where(np.sign(diff[:,:,:-1]) * np.sign(diff[:,:,1:]) < 0)[0] + 1
+
+#     pass
+    
+
+def new_local_min_heuristic(all_losses):
+    # TODO -- takes forever, need to optimize if i actually want to keep this
+
+    width, height, num_Z = all_losses.shape
+    local_mins = np.zeros((width, height), dtype=int)
+    sorted_indices = np.argsort(all_losses, axis=-1)
+
+    window_length = int(0.1 * num_Z)
+    if window_length < 5:
+        window_length = 5
+    if window_length % 2 == 0:
+        window_length += 1
+
+    # diff = np.diff(all_losses, axis=-1)
+    # d2 = np.gradient(np.gradient(losses, edge_order=2, axis=-1), edge_order=2, axis=-1)
+    # d2_savgol_filter = scipy.signal.savgol_filter(all_losses, axis=-1, window_length=window_length, polyorder=3, deriv=2, delta=1, mode='interp')
+    # cross_indices = np.where(np.sign(diff[:,:,:-1]) * np.sign(diff[:,:,1:]) < 0)[0] + 1
+    
+
+
+    for i in range(width):
+        for j in range(height):
+    
+            losses = all_losses[i, j]
+        
+            diff = np.diff(losses)
+        
+            d2_savgol_filter = scipy.signal.savgol_filter(losses, window_length=window_length, polyorder=3, deriv=2, delta=1, mode='interp')
+            
+            cross_indices = np.where(np.sign(diff[:-1]) * np.sign(diff[1:]) < 0)[0] + 1
+                           
+            if len(cross_indices) > 0:
+                local_min = cross_indices[np.argmax(d2_savgol_filter[cross_indices])]
+                if d2_savgol_filter[local_min] > 0: # not positive 
+                    local_mins[i,j] = local_min
+                    continue
+
+            # just use minimum 
+            local_mins[i,j] = sorted_indices[i,j,0]
+
+    return local_mins
 
 def grid_search_opt_k(gt_aif, defocus_stack, indices=None, min_Z = 0.1, max_Z = 10, num_Z = 100, k = 3, beta=0, proxy=None, gamma=0, similarity_penalty=False, last_dpt=None, gss_window=1, verbose=True):
     # try many values of Z
@@ -130,11 +233,14 @@ def grid_search_opt_k(gt_aif, defocus_stack, indices=None, min_Z = 0.1, max_Z = 
         
         dpt = np.ones((width,height), dtype=np.float32) * Z[i]
         all_losses[:,:,i] = objective_full(dpt, gt_aif, defocus_stack, indices=indices, pred=defocus_stack_pred, beta=beta, proxy=proxy, gamma=gamma, similarity_penalty=similarity_penalty, last_dpt=last_dpt)
+        # all_losses[:,:,i] = objective_full(dpt, gt_aif, defocus_stack, indices=indices, pred=defocus_stack_pred, beta=beta, proxy=proxy, gamma=gamma, similarity_penalty=similarity_penalty, last_dpt=last_dpt, windowed=True)
 
     sorted_indices = np.argsort(all_losses, axis=2)
+
+    # three diff methods
     # k_min_indices = sorted_indices[:,:,:k] # axis = 2
     k_min_indices = k_min_indices_no_overlap(sorted_indices, k, gss_window=gss_window)
-    # print(k_min_indices.shape)
+    # k_min_indices = np.expand_dims(new_local_min_heuristic(all_losses), axis=-1)
     
     depth_maps = Z[k_min_indices]
     # print(k_min_indices.shape, depth_maps.shape)

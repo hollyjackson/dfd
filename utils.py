@@ -496,12 +496,10 @@ def plot_grid_search_on_pixel(i, j, Z, all_losses, gt_dpt=None, k_min_indices=No
     for idx in cross_indices:
         # print(idx, Z[idx], d_savgol_filter[idx], d_savgol_filter[idx+1])
         print(idx, Z[idx], diff[idx], diff[idx+1])
-    
-    local_min = cross_indices[np.argmax(d2_savgol_filter[cross_indices])]
-
-    # plt.scatter(Z[cross_indices], all_losses[i,j,cross_indices], color='purple', marker='x', s=100, label='crossings')
-    plt.scatter([Z[local_min]], [all_losses[i,j,local_min]], color='purple', marker='x', s=100, label='local min')
-        
+    if len(cross_indices) > 0:
+        local_min = cross_indices[np.argmax(d2_savgol_filter[cross_indices])]
+        plt.scatter([Z[local_min]], [all_losses[i,j,local_min]], color='purple', marker='x', s=100, label='local min')
+            
     plt.xticks(Z[::2], labels=np.round(Z[::2], 2), rotation=45)
     plt.xlabel('Depth (m)')
     plt.ylabel('MSE between Predicted and Ground Truth Defocus Stack')
