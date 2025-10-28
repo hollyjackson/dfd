@@ -25,7 +25,7 @@ def mse_loss(pred, gt):
     return np.mean((gt - pred)**2)
     
 
-def coordinate_descent(defocus_stack,  experiment_folder='experiments', gss_tol = 1e-2, gss_window = 1, ls_maxiter = 100, ls_maxiter_multiplier = None, num_epochs = 25, least_squares_first = True, save_plots = True, show_plots = False, depth_init = None, aif_init = None, dpt_denoising_weight = None, aif_denoising_weight = None, dpt_denoise_delay = 10, experiment_name = 'coord-descent', vmin = 0.7, vmax = 1.9, proxy_opt = False, beta = 1e-3, multiplier = 1.1, remove_outliers = False, diff_thresh = 2, tv_thresh = 0.15, tv_thresh_min = 0.15, tv_thresh_multiplier = None, outlier_patch_type = 'tv', adaptive_grid = False, grid_window = 0.25, gamma = 1e-3, similarity_penalty = False, finite_differences = False, t = None, fd_maxiter = 100, epsilon = 1e-3, min_Z = 0.1, max_Z = 10, num_Z = 100, k = 1, aif_method='fista', verbose=True):
+def coordinate_descent(defocus_stack,  experiment_folder='experiments', gss_tol = 1e-2, gss_window = 1, ls_maxiter = 100, ls_maxiter_multiplier = None, num_epochs = 25, least_squares_first = True, save_plots = True, show_plots = False, depth_init = None, aif_init = None, dpt_denoising_weight = None, aif_denoising_weight = None, dpt_denoise_delay = 10, experiment_name = 'coord-descent', vmin = 0.7, vmax = 1.9, proxy_opt = False, beta = 1e-3, multiplier = 1.1, remove_outliers = False, diff_thresh = 2, tv_thresh = 0.15, tv_thresh_min = 0.15, tv_thresh_multiplier = None, outlier_patch_type = 'tv', adaptive_grid = False, grid_window = 0.25, gamma = 1e-3, similarity_penalty = False, finite_differences = False, t = None, fd_maxiter = 100, epsilon = 1e-3, min_Z = 0.1, max_Z = 10, num_Z = 100, k = 1, aif_method='fista', verbose=True, windowed_mse=False):
     assert not (finite_differences and adaptive_grid)
     assert not (finite_differences and similarity_penalty)
     assert aif_method in ['fista', 'ls']
@@ -165,7 +165,7 @@ def coordinate_descent(defocus_stack,  experiment_folder='experiments', gss_tol 
                 # TODO: change grid search to opt
                 # if k > 1:
                 t0 = time.time()
-                depth_maps, Z, k_min_indices, all_losses = section_search.grid_search_opt_k(aif, defocus_stack, indices=indices, min_Z=min_Z, max_Z=max_Z, num_Z=num_Z, k=k, beta=beta, proxy=dpt_proxy, gamma=gamma, similarity_penalty=similarity_penalty, last_dpt=last_dpt, gss_window=gss_window, verbose=verbose)
+                depth_maps, Z, k_min_indices, all_losses = section_search.grid_search_opt_k(aif, defocus_stack, indices=indices, min_Z=min_Z, max_Z=max_Z, num_Z=num_Z, k=k, beta=beta, proxy=dpt_proxy, gamma=gamma, similarity_penalty=similarity_penalty, last_dpt=last_dpt, gss_window=gss_window, verbose=verbose, windowed=windowed_mse)
                 if verbose:
                     print('GRID SEARCH DURATION', time.time()-t0)
                 # else:    

@@ -11,6 +11,7 @@ from PIL import Image
 import cv2
 
 import OpenEXR
+import struct
 
 import torch
 torch.cuda.empty_cache()
@@ -36,12 +37,12 @@ def get_worst_diff_pixels(recon, gt, num_worst_pixels = 5, vmin=0.7, vmax=1.9):
     return worst_coords
 
 def plot_single_stack(recon, setting, recon_max = None, title=None):
-    assert len(recon) in [5, 10]
+    # assert len(recon) in [5, 10]
     
 
     num_images = len(recon)
     cols = 5
-    rows = round(len(recon) / cols)
+    rows = math.ceil(len(recon) / cols)
 
     fig, axes = plt.subplots(rows, cols, figsize=(cols * 2, rows * 3))
     if rows == 1:
@@ -53,7 +54,7 @@ def plot_single_stack(recon, setting, recon_max = None, title=None):
             recon_max = recon[i].max()
         axes[i].imshow(recon[i] / recon_max)
         axes[i].axis('off')
-        axes[i].set_title(f"{setting[i]}")
+        axes[i].set_title(f"{setting[i]:.3f}")
 
     if title:
         fig.suptitle(title)
@@ -273,6 +274,146 @@ def load_dpt_DefocusNet(img_dpt_path):
     dpt = np.fromstring(r, dtype=np.float16)
     dpt.shape = (size[1], size[0])
     return dpt
+
+def read_bin_file(path_to_file):
+    with open(path_to_file, "rb") as f:
+        # Read header
+        t = np.frombuffer(f.read(1), np.uint8)[0]     # type code
+        h = struct.unpack("i", f.read(4))[0]          # height
+        w = struct.unpack("i", f.read(4))[0]          # width
+
+        # Map OpenCV type code to NumPy dtype
+        cv_depth = t & 7
+        depth_map = {
+            0: np.uint8,
+            1: np.int8,
+            2: np.uint16,
+            3: np.int16,
+            4: np.int32,
+            5: np.float32,
+            6: np.float64,
+        }
+        dtype = depth_map[cv_depth]
+
+        # Read the rest of the data
+        data = np.frombuffer(f.read(), dtype=dtype)
+        mat = data.reshape(h, w)
+
+    return mat.astype(np.float32)
+
+def load_single_sample_MobileDepth(example_name="keyboard"):
+    assert example_name in ["keyboard", "bottles", "fruits", "metals", "plants", "telephone", "window", "largemotion", "smallmotion", "zeromotion", "balls"]
+    # no calibration data: "bucket", "kitchen", 
+
+    # retrieve aligned focal stack
+    data_path = os.path.join(os.getcwd(),'MobileDepth')
+    focal_stack_dir = os.path.join(data_path, 'aligned-focus-stack', 'Aligned')
+
+    example_directory = None
+    for name in os.listdir(focal_stack_dir):
+        subdir = os.path.join(focal_stack_dir, name)
+        if os.path.isdir(subdir):
+            candidate = os.path.join(subdir, example_name)
+            if os.path.isdir(candidate):
+                example_directory = candidate
+                print("Found at:", os.path.abspath(candidate))
+                break
+    
+    assert example_directory is not None
+
+    defocus_stack = []
+    for filename in os.listdir(example_directory):
+        if filename.startswith("a") and filename.endswith(".jpg"):
+            defocus_stack.append(os.path.join(example_directory, filename))
+    defocus_stack = sorted(defocus_stack)
+
+    for i in range(len(defocus_stack)):
+        defocus_stack[i] = np.array(Image.open(defocus_stack[i]), dtype=np.float32) / 255.
+
+    defocus_stack = np.stack(defocus_stack, 0)
+    
+    # camera parameters
+
+    # resolve weird naming inconsistencies
+    calib_name = example_name
+    if example_name == "largemotion":
+        calib_name = "GTLarge"
+    if example_name == "smallmotion":
+        calib_name = "GTSmall"
+    if example_name == "zeromotion":
+        calib_name = "GT"
+    if example_name == "metals":
+        calib_name = "metal"
+        
+    calib_dir = os.path.join(data_path, 'photos-calibration-results', 'calibration', calib_name)
+
+    calib_file = os.path.join(calib_dir, "calibrated.txt")
+    focal_depths = []
+    apertures = []
+    focal_length = None
+    
+    with open(calib_file, "r") as f:
+        lines = [line.strip() for line in f if line.strip()] # removes blank lines
+    
+    # last line is focal length
+    focal_length = float(lines[-1])
+    
+    # all previous lines: focal depth / aperture
+    for line in lines[:-1]:
+        parts = line.split()
+        if len(parts) >= 2:
+            focal_depths.append(float(parts[0]))
+            apertures.append(float(parts[1]))
+
+    assert len(set(apertures)) == 1
+
+    # set globals
+    globals.Df = np.array(focal_depths) * 0.0254 # inches --> meters
+    globals.f = focal_length * 0.0254 # inches --> meters
+    globals.D = globals.f / set(apertures).pop() # f-number
+
+    
+    
+    print("Focal depths:", globals.Df)
+    print("Apertures:", globals.D)
+    print("Focal length:", globals.f)
+    # print("Pixel size:", globals.ps)
+    print(defocus_stack.shape)
+    # their depth result
+    dpt_res_file = os.path.join(calib_dir, "depth_var.bin")
+    mat = read_bin_file(dpt_res_file)
+    # with open(dpt_res_file, "rb") as f:
+    #     # Read header
+    #     t = np.frombuffer(f.read(1), np.uint8)[0]     # type code
+    #     h = struct.unpack("i", f.read(4))[0]          # height
+    #     w = struct.unpack("i", f.read(4))[0]          # width
+
+    #     # Map OpenCV type code to NumPy dtype
+    #     cv_depth = t & 7
+    #     depth_map = {
+    #         0: np.uint8,
+    #         1: np.int8,
+    #         2: np.uint16,
+    #         3: np.int16,
+    #         4: np.int32,
+    #         5: np.float32,
+    #         6: np.float64,
+    #     }
+    #     dtype = depth_map[cv_depth]
+
+    #     # Read the rest of the data
+    #     data = np.frombuffer(f.read(), dtype=dtype)
+    #     mat = data.reshape(h, w)
+
+    dpt_result = 1.0 / mat # invert 
+    mn, mx = np.min(dpt_result), np.max(dpt_result)
+    dpt_result = (dpt_result - mn) / (mx - mn)
+
+    
+    scale_file = os.path.join(calib_dir, "scaleMatrix.bin")
+    scale_mat = read_bin_file(scale_file)
+
+    return defocus_stack, dpt_result, scale_mat
 
 def compute_RMS(pred, gt):
     diff_sq = (pred - gt) ** 2

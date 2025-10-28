@@ -72,8 +72,8 @@ def windowed_mse_v2(defocus_stack, pred, window_size=3):
             losses[i,j] = np.mean((gt-p)**2)
     return losses
 
-def windowed_mse(defocus_stack, pred, window_size=3):
-    rad = window_size // 2
+def windowed_mse(defocus_stack, pred):#, window_size=5):
+    rad = globals.window_size // 2
     if rad % 2 == 0:
         rad += 1
     # rad = globals.MAX_KERNEL_SIZE // 2
@@ -204,7 +204,7 @@ def new_local_min_heuristic(all_losses):
 
     return local_mins
 
-def grid_search_opt_k(gt_aif, defocus_stack, indices=None, min_Z = 0.1, max_Z = 10, num_Z = 100, k = 3, beta=0, proxy=None, gamma=0, similarity_penalty=False, last_dpt=None, gss_window=1, verbose=True):
+def grid_search_opt_k(gt_aif, defocus_stack, indices=None, min_Z = 0.1, max_Z = 10, num_Z = 100, k = 3, beta=0, proxy=None, gamma=0, similarity_penalty=False, last_dpt=None, gss_window=1, verbose=True, windowed=False):
     # try many values of Z
     Z = np.linspace(min_Z, max_Z, num_Z, dtype=np.float32)
 
@@ -232,7 +232,7 @@ def grid_search_opt_k(gt_aif, defocus_stack, indices=None, min_Z = 0.1, max_Z = 
                 defocus_stack_pred[j,:,:,c] = scipy.ndimage.convolve(gt_aif[:,:,c], kernel, mode='constant')
         
         dpt = np.ones((width,height), dtype=np.float32) * Z[i]
-        all_losses[:,:,i] = objective_full(dpt, gt_aif, defocus_stack, indices=indices, pred=defocus_stack_pred, beta=beta, proxy=proxy, gamma=gamma, similarity_penalty=similarity_penalty, last_dpt=last_dpt)
+        all_losses[:,:,i] = objective_full(dpt, gt_aif, defocus_stack, indices=indices, pred=defocus_stack_pred, beta=beta, proxy=proxy, gamma=gamma, similarity_penalty=similarity_penalty, last_dpt=last_dpt, windowed=windowed)
         # all_losses[:,:,i] = objective_full(dpt, gt_aif, defocus_stack, indices=indices, pred=defocus_stack_pred, beta=beta, proxy=proxy, gamma=gamma, similarity_penalty=similarity_penalty, last_dpt=last_dpt, windowed=True)
 
     sorted_indices = np.argsort(all_losses, axis=2)
