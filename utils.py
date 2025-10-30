@@ -12,6 +12,8 @@ import cv2
 
 import OpenEXR
 import struct
+import exifread
+from scipy.io import loadmat
 
 import torch
 torch.cuda.empty_cache()
@@ -301,8 +303,10 @@ def read_bin_file(path_to_file):
 
     return mat.astype(np.float32)
 
-def load_single_sample_MobileDepth(example_name="keyboard"):
+def load_single_sample_MobileDepth(example_name="keyboard", res='full'):
     assert example_name in ["keyboard", "bottles", "fruits", "metals", "plants", "telephone", "window", "largemotion", "smallmotion", "zeromotion", "balls"]
+    assert res == 'full' or res == 'half'
+
     # no calibration data: "bucket", "kitchen", 
 
     # retrieve aligned focal stack
@@ -327,8 +331,19 @@ def load_single_sample_MobileDepth(example_name="keyboard"):
             defocus_stack.append(os.path.join(example_directory, filename))
     defocus_stack = sorted(defocus_stack)
 
+    resize_frac = 2 if res == 'half' else 1
+
     for i in range(len(defocus_stack)):
         defocus_stack[i] = np.array(Image.open(defocus_stack[i]), dtype=np.float32) / 255.
+        width, height, _ = defocus_stack[i].shape
+        if resize_frac != 1:
+            defocus_stack[i] = skimage.transform.resize(
+                defocus_stack[i],
+                output_shape=(width//resize_frac,height//resize_frac), # (height, width)
+                order=1,                  # bilinear interpolation
+                anti_aliasing=True,
+                preserve_range=True       # don't normalize to [0, 1]
+            )
 
     defocus_stack = np.stack(defocus_stack, 0)
     
@@ -368,9 +383,9 @@ def load_single_sample_MobileDepth(example_name="keyboard"):
     assert len(set(apertures)) == 1
 
     # set globals
-    globals.Df = np.array(focal_depths) * 0.0254 # inches --> meters
-    globals.f = focal_length * 0.0254 # inches --> meters
-    globals.D = globals.f / set(apertures).pop() # f-number
+    globals.Df = np.array(focal_depths) # unitless
+    globals.f = focal_length # unitless
+    globals.D = set(apertures).pop() # unitless confirmed by Supasorn
 
     
     
@@ -382,6 +397,10 @@ def load_single_sample_MobileDepth(example_name="keyboard"):
     # their depth result
     dpt_res_file = os.path.join(calib_dir, "depth_var.bin")
     mat = read_bin_file(dpt_res_file)
+    plt.imshow(mat)
+    plt.colorbar()
+    plt.show()
+    print(mat.min(), mat.max())
     # with open(dpt_res_file, "rb") as f:
     #     # Read header
     #     t = np.frombuffer(f.read(1), np.uint8)[0]     # type code
@@ -405,15 +424,94 @@ def load_single_sample_MobileDepth(example_name="keyboard"):
     #     data = np.frombuffer(f.read(), dtype=dtype)
     #     mat = data.reshape(h, w)
 
-    dpt_result = 1.0 / mat # invert 
-    mn, mx = np.min(dpt_result), np.max(dpt_result)
-    dpt_result = (dpt_result - mn) / (mx - mn)
+    dpt_result = mat
+    # dpt_result = 1.0 / mat # invert 
+    # mn, mx = np.min(dpt_result), np.max(dpt_result)
+    # dpt_result = (dpt_result - mn) / (mx - mn)
 
     
     scale_file = os.path.join(calib_dir, "scaleMatrix.bin")
     scale_mat = read_bin_file(scale_file)
 
     return defocus_stack, dpt_result, scale_mat
+
+def exif_to_float(tag):
+    if tag is None:
+        return None
+    try:
+        val = tag.values[0]
+        return float(val.num) / float(val.den)
+    except AttributeError:
+        # sometimes it's already a float or simple number
+        return float(tag.values[0]) if hasattr(tag, "values") else float(tag)
+
+
+def load_single_sample_Make3D(img_name = "img-math7-p-282t0.jpg", data_dir = "/data/holly_jackson/", split='train'):
+    assert split in ['test', 'train']
+    img_subdir = 'Test134Img' if split == 'test' else 'Train400Img'
+    dpt_subdir = 'Test134Depth' if split == 'test' else 'Train400Depth'
+    
+    img_filename = os.path.join(data_dir, 'Make3D', img_subdir, img_name)
+
+    # filename = "img-math7-p-282t0.jpg"
+    with open(img_filename, 'rb') as f:
+        tags = exifread.process_file(f)
+
+    # print a few useful fields
+    print("Camera:", tags.get("Image Make"), tags.get("Image Model"))
+    focal_length_mm = exif_to_float(tags.get("EXIF FocalLength"))
+    globals.f = focal_length_mm * 1e-3
+    print("Focal length (m):", globals.f)
+    f_number = exif_to_float(tags.get("EXIF FNumber"))
+    print("F-number:", f_number)
+    globals.D = globals.f / f_number
+    print("Aperture diameter (m):", globals.D)
+
+    # load image 
+    aif = np.array(Image.open(img_filename), dtype=np.float32) / 255.
+    image_width_px = aif.shape[0]   # Make3D image width
+    # resize data as recommended by Saxena papers and Gur (460 × 345)
+    plt.imshow(aif)
+    plt.show()
+    print(aif.shape)
+
+    aif = skimage.transform.resize(
+        aif,
+        output_shape=(460, 345), # (height, width)
+        order=1,                  # bilinear interpolation
+        anti_aliasing=True,
+        preserve_range=True       # keep values in [0, 255] if original was uint8
+    )
+    plt.imshow(aif)
+    plt.show()
+    # print(aif.shape)
+    
+    # https://www.digicamdb.com/specs/canon_powershot-s40/
+    # 1/1.8" (~ 7.11 x 5.33 mm)  
+    sensor_width_m = 7.11e-3  # Canon PowerShot S40, lookup value
+    globals.ps = sensor_width_m / image_width_px * (image_width_px / aif.shape[0])
+    print("Pixel size (m/pix):", globals.ps)
+
+    part = img_name.split("img-")[1].split(".jpg")[0]
+    dpt_name = "depth_sph_corr-" + part + ".mat"
+    dpt_filename = os.path.join(data_dir, 'Make3D', dpt_subdir, dpt_name)
+    
+    data = loadmat(dpt_filename)
+    
+    # print(data.keys())          # list all variable names
+    dpt = np.array(data["Position3DGrid"], dtype=np.float32)    # access one variable
+    # print(data['__header__'], data['__version__'], data['__globals__'])
+    # print(dpt.shape, dpt.dtype)
+    assert np.all(dpt[:,:,:3] == 0)
+    dpt = dpt[:,:,3]
+    
+    plt.imshow(dpt)
+    plt.colorbar()
+    plt.show()
+
+    print('GT DPT Range:', dpt.min(),'-',dpt.max())
+    
+    return aif, dpt
 
 def compute_RMS(pred, gt):
     diff_sq = (pred - gt) ** 2

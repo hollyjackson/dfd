@@ -19,8 +19,8 @@ import initialization
 IMAGE_RANGE = 255.
 #FORWARD_KERNEL_TYPE = 'gaussian'
 EXPERIMENT_NAME = 'mobile-depth-'
-windowed_MSE = False
-#globals.window_size = 3
+windowed_MSE = True
+globals.window_size = 5
 globals.thresh = 0.5
 if windowed_MSE:
     EXPERIMENT_NAME += "windowed"+str(globals.window_size)+"-"
@@ -46,8 +46,6 @@ def load_image(example_name):
     
     defocus_stack *= IMAGE_RANGE 
     
-    # print(defocus_stack.shape, defocus_stack.min(), defocus_stack.max())
-    globals.ps = 4.54e-3 / 3264 * (3264 / defocus_stack.shape[1]) # from Samsung Galaxy S3 sensor size
     print('Pixel size:', globals.ps)
     
     
@@ -55,10 +53,10 @@ def load_image(example_name):
     print(fs, width, height)
     print(dpt_result.dtype, defocus_stack.dtype)
     
-    globals.min_Z = max(0.001, globals.Df.min() - 0.05)
-    globals.max_Z = min(3, globals.Df.max() + 0.5)
+    globals.min_Z = max(0.1, globals.Df.min() - 3)
+    globals.max_Z = min(100, globals.Df.max() + 3)
     print('Depth range', globals.min_Z,'-', globals.max_Z)
-    
+
     
     max_kernel_size = utils.kernel_size_heuristic(width, height)
     print('adaptive kernel size set to',max_kernel_size)
@@ -84,7 +82,7 @@ def coord_descent(defocus_stack, num_epochs = 40,
                   save_plots = True, 
                   least_squares_first = False,
                   depth_init = None, aif_init = None,
-                  vmin = 0.1, vmax = 10, windowed_MSE = True):
+                  vmin = 0.1, vmax = 10, windowed_MSE = False):
     # -------------------
     # COORDINATE DESCENT
     # -------------------
@@ -102,7 +100,7 @@ def coord_descent(defocus_stack, num_epochs = 40,
             ls_maxiter = 200, ls_maxiter_multiplier = 1.05, 
             vmin = vmin, vmax = vmax,
             min_Z = globals.min_Z, max_Z = globals.max_Z,
-            verbose = False
+            verbose = False, windowed_mse = windowed_MSE
     )
 
     
@@ -120,11 +118,15 @@ def main():
     # load image
     defocus_stack = load_image(example_name)
 
+    # aif initialization
+    aif_init = aif_initialization(defocus_stack)
+    
     # coord descent
     # globals.window = 3
     dpt, aif, exp_folder = coord_descent(
-        defocus_stack, save_plots = False,
+        defocus_stack, save_plots = True,
         num_epochs = 40, least_squares_first = False,
+        aif_init = aif_init,
         vmin = globals.min_Z, vmax = globals.max_Z,
         windowed_MSE = windowed_MSE
     )

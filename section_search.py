@@ -55,9 +55,9 @@ def compute_tv_map(image, patch_size = None):
 
 def windowed_mse_v2(defocus_stack, pred, window_size=3):
     # brute force version (slow), keep for testing
+    if window_size % 2 == 0:
+        window_size += 1
     rad = window_size // 2
-    if rad % 2 == 0:
-        rad += 1
     # rad = globals.MAX_KERNEL_SIZE // 2
     _, width, height, _ = defocus_stack.shape
     losses = np.zeros((width, height), dtype=np.float32)
@@ -72,10 +72,69 @@ def windowed_mse_v2(defocus_stack, pred, window_size=3):
             losses[i,j] = np.mean((gt-p)**2)
     return losses
 
-def windowed_mse(defocus_stack, pred):#, window_size=5):
+
+def windowed_mse_v3_brute_force(depth_map, gt_aif, defocus_stack, indices=None, template_A_stack=None):
+    if globals.window_size % 2 == 0:
+        globals.window_size += 1
     rad = globals.window_size // 2
-    if rad % 2 == 0:
-        rad += 1
+    _, width, height, _ = defocus_stack.shape
+
+    shifted_pred_dict = {}
+    for i in range(-rad, rad+1):
+        x_shifted = np.roll(depth_map, shift=i, axis=0)
+        for j in range(-rad, rad+1):
+            shifted = np.roll(x_shifted, shift=j, axis=1)
+            # compute mse 
+            pred = forward_model.forward(shifted, gt_aif, indices=indices, template_A_stack=template_A_stack)
+            shifted_pred_dict[(i,j)] = pred
+
+    
+    losses = np.zeros((width, height), dtype=np.float32)
+    denom = np.zeros((width, height), dtype=np.float32)
+    for x in range(width):
+        for y in range(height):
+            for i in range(-rad, rad+1):
+                for j in range(-rad, rad+1):
+                    # todo -- this is incorrect
+                    # x, y
+                    #x - rad, y - rad being the same depth value as x, y
+                    if x+i >= 0 and x+i < width and y+j >= 0 and y+j < height:
+                        pred_value = shifted_pred_dict[(i,j)][:,x+i,y+j,:]
+                        defocus_stack_val = defocus_stack[:,x+i,y+j,:]
+                        losses[x,y] += np.mean((pred_value - defocus_stack_val)**2)
+                        denom[x,y] += 1
+
+    return losses/denom
+
+
+def windowed_mse_gss(depth_map, gt_aif, defocus_stack, indices=None, template_A_stack=None):
+    if globals.window_size % 2 == 0:
+        globals.window_size += 1
+    rad = globals.window_size // 2
+    _, width, height, _ = defocus_stack.shape
+
+    losses = np.zeros((width, height), dtype=np.float32)
+    denom = np.zeros((width, height), dtype=np.float32)
+    for i in range(-rad, rad+1):
+        x_shifted = np.roll(depth_map, shift=i, axis=0)
+        for j in range(-rad, rad+1):
+            shifted = np.roll(x_shifted, shift=j, axis=1)
+            # compute mse 
+            pred = forward_model.forward(shifted, gt_aif, indices=indices, template_A_stack=template_A_stack)
+            mse = np.mean((defocus_stack - pred)**2, axis=(0, -1))
+            i_start = -i if i < 0 else 0
+            i_end = width-i if i > 0 else width
+            j_start = -j if j < 0 else 0
+            j_end = height-j if j > 0 else height
+            losses[i_start:i_end, j_start:j_end] += mse[i_start+i:i_end+i, j_start+j:j_end+j]
+            denom[i_start:i_end, j_start:j_end] += 1
+            
+    return losses / denom
+
+def windowed_mse(defocus_stack, pred):#, window_size=5):
+    if globals.window_size % 2 == 0:
+        globals.window_size += 1
+    rad = globals.window_size // 2
     # rad = globals.MAX_KERNEL_SIZE // 2
     _, width, height, _ = defocus_stack.shape
     mse = np.mean((defocus_stack - pred)**2, axis=(0, -1))
@@ -99,13 +158,18 @@ def objective_full(depth_map, gt_aif, defocus_stack, indices=None, template_A_st
     #     depth_map_torch = torch.from_numpy(depth_map).to(defocus_stack_torch.device)
     # else:
     #     depth_map_torch = depth_map
-    if pred is None:
+    # grid_search = True if np.all(np.isclose(depth_map, depth_map[0][0])) else False
+    if pred is None:# and ((not windowed) or (windowed and grid_search)):
         pred = forward_model.forward(depth_map, gt_aif, indices=indices, template_A_stack=template_A_stack)
     # loss = torch.nn.functional.mse_loss(defocus_stack_torch, pred)
     # return loss.item()
-    loss = np.mean((defocus_stack - pred)**2, axis=(0, -1))
     if windowed:
+        # if grid_search:
         loss = windowed_mse(defocus_stack, pred)
+        # else:
+        #     loss = windowed_mse_gss(depth_map, gt_aif, defocus_stack, indices=indices, template_A_stack=template_A_stack)
+    else:
+        loss = np.mean((defocus_stack - pred)**2, axis=(0, -1))
     if proxy is not None:
         # loss += beta * (depth_map_torch - proxy)**2
         loss += beta * np.linalg.norm(depth_map - proxy)**2
