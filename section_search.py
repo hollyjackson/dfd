@@ -131,7 +131,7 @@ def windowed_mse_gss(depth_map, gt_aif, defocus_stack, indices=None, template_A_
             
     return losses / denom
 
-def windowed_mse(defocus_stack, pred):#, window_size=5):
+def windowed_mse_grid(defocus_stack, pred):#, window_size=5):
     if globals.window_size % 2 == 0:
         globals.window_size += 1
     rad = globals.window_size // 2
@@ -158,17 +158,21 @@ def objective_full(depth_map, gt_aif, defocus_stack, indices=None, template_A_st
     #     depth_map_torch = torch.from_numpy(depth_map).to(defocus_stack_torch.device)
     # else:
     #     depth_map_torch = depth_map
-    # grid_search = True if np.all(np.isclose(depth_map, depth_map[0][0])) else False
-    if pred is None:# and ((not windowed) or (windowed and grid_search)):
-        pred = forward_model.forward(depth_map, gt_aif, indices=indices, template_A_stack=template_A_stack)
+    grid_search = True if np.all(np.isclose(depth_map, depth_map[0][0])) else False
+    # if pred is None:# and ((not windowed) or (windowed and grid_search)):
+    #     pred = forward_model.forward(depth_map, gt_aif, indices=indices, template_A_stack=template_A_stack)
     # loss = torch.nn.functional.mse_loss(defocus_stack_torch, pred)
     # return loss.item()
     if windowed:
-        # if grid_search:
-        loss = windowed_mse(defocus_stack, pred)
-        # else:
-        #     loss = windowed_mse_gss(depth_map, gt_aif, defocus_stack, indices=indices, template_A_stack=template_A_stack)
+        if grid_search:
+            if pred is None:# and ((not windowed) or (windowed and grid_search)):
+                pred = forward_model.forward(depth_map, gt_aif, indices=indices, template_A_stack=template_A_stack)
+            loss = windowed_mse_grid(defocus_stack, pred)
+        else:
+            loss = windowed_mse_gss(depth_map, gt_aif, defocus_stack, indices=indices, template_A_stack=template_A_stack)
     else:
+        if pred is None:# and ((not windowed) or (windowed and grid_search)):
+            pred = forward_model.forward(depth_map, gt_aif, indices=indices, template_A_stack=template_A_stack)
         loss = np.mean((defocus_stack - pred)**2, axis=(0, -1))
     if proxy is not None:
         # loss += beta * (depth_map_torch - proxy)**2
@@ -429,7 +433,7 @@ def dtype_report(tag, **arrs):
     print(f"[{tag}] {items}")
 
 def golden_section_search(Z, argmin_indices, gt_aif, defocus_stack, indices=None, template_A_stack=None,
-    window=1, tolerance=1e-5, convergence_error=0, max_iter=100, beta=0, proxy=None, gamma=0, similarity_penalty=False, last_dpt=None, a_b_init=None, verbose=True):
+    window=1, tolerance=1e-5, convergence_error=0, max_iter=100, beta=0, proxy=None, gamma=0, similarity_penalty=False, last_dpt=None, a_b_init=None, verbose=True, windowed=False):
     assert convergence_error >= 0 and convergence_error < 1
     if verbose:
         print("\nGolden-section search...")
@@ -449,8 +453,8 @@ def golden_section_search(Z, argmin_indices, gt_aif, defocus_stack, indices=None
     c = b - (b - a) * invphi
     d = a + (b - a) * invphi
     
-    f_c = objective_full(c, gt_aif, defocus_stack, indices=indices, template_A_stack=template_A_stack, beta=beta, proxy=proxy, gamma=gamma, similarity_penalty=similarity_penalty, last_dpt=last_dpt)
-    f_d = objective_full(d, gt_aif, defocus_stack, indices=indices, template_A_stack=template_A_stack, beta=beta, proxy=proxy, gamma=gamma, similarity_penalty=similarity_penalty, last_dpt=last_dpt)
+    f_c = objective_full(c, gt_aif, defocus_stack, indices=indices, template_A_stack=template_A_stack, beta=beta, proxy=proxy, gamma=gamma, similarity_penalty=similarity_penalty, last_dpt=last_dpt, windowed=windowed)
+    f_d = objective_full(d, gt_aif, defocus_stack, indices=indices, template_A_stack=template_A_stack, beta=beta, proxy=proxy, gamma=gamma, similarity_penalty=similarity_penalty, last_dpt=last_dpt, windowed=windowed)
    
 
     i = 0
@@ -490,10 +494,10 @@ def golden_section_search(Z, argmin_indices, gt_aif, defocus_stack, indices=None
             d[go_right] = a[go_right] + (b[go_right] - a[go_right]) * invphi
 
         if np.any(go_left):
-            f_c = objective_full(c, gt_aif, defocus_stack, indices=indices, template_A_stack=template_A_stack, beta=beta, proxy=proxy, gamma=gamma, similarity_penalty=similarity_penalty, last_dpt=last_dpt)
+            f_c = objective_full(c, gt_aif, defocus_stack, indices=indices, template_A_stack=template_A_stack, beta=beta, proxy=proxy, gamma=gamma, similarity_penalty=similarity_penalty, last_dpt=last_dpt, windowed=windowed)
 
         if np.any(go_right):
-            f_d = objective_full(d, gt_aif, defocus_stack, indices=indices, template_A_stack=template_A_stack, beta=beta, proxy=proxy, gamma=gamma, similarity_penalty=similarity_penalty, last_dpt=last_dpt)
+            f_d = objective_full(d, gt_aif, defocus_stack, indices=indices, template_A_stack=template_A_stack, beta=beta, proxy=proxy, gamma=gamma, similarity_penalty=similarity_penalty, last_dpt=last_dpt, windowed=windowed)
     
         
         # b[go_left] = d[go_left]
@@ -517,8 +521,8 @@ def golden_section_search(Z, argmin_indices, gt_aif, defocus_stack, indices=None
     dpt = (b + a) / 2
 
     if last_dpt is not None:
-        mse = objective_full(dpt, gt_aif, defocus_stack, indices=indices, template_A_stack=template_A_stack, beta=beta, proxy=proxy, gamma=0, similarity_penalty=False, last_dpt=None)
-        last_mse = objective_full(last_dpt, gt_aif, defocus_stack, indices=indices, template_A_stack=template_A_stack, beta=beta, proxy=proxy, gamma=0, similarity_penalty=False, last_dpt=None)
+        mse = objective_full(dpt, gt_aif, defocus_stack, indices=indices, template_A_stack=template_A_stack, beta=beta, proxy=proxy, gamma=0, similarity_penalty=False, last_dpt=None, windowed=windowed)
+        last_mse = objective_full(last_dpt, gt_aif, defocus_stack, indices=indices, template_A_stack=template_A_stack, beta=beta, proxy=proxy, gamma=0, similarity_penalty=False, last_dpt=None, windowed=windowed)
         dpt = np.where(mse <= last_mse, dpt, last_dpt)
 
     return dpt

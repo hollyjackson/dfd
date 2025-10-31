@@ -200,15 +200,15 @@ def coordinate_descent(defocus_stack,  experiment_folder='experiments', gss_tol 
             last_depth_map_golden = None
             for kk in range(k):
                 t0 = time.time()
-                depth_map_golden = section_search.golden_section_search(Z, k_min_indices[:,:,kk], aif, defocus_stack, indices=indices, template_A_stack=template_A_stack, window=gss_window, tolerance=gss_tol, a_b_init=a_b_init, beta=beta, proxy=dpt_proxy, gamma=gamma, similarity_penalty=similarity_penalty, last_dpt=last_dpt, verbose=verbose)
+                depth_map_golden = section_search.golden_section_search(Z, k_min_indices[:,:,kk], aif, defocus_stack, indices=indices, template_A_stack=template_A_stack, window=gss_window, tolerance=gss_tol, a_b_init=a_b_init, beta=beta, proxy=dpt_proxy, gamma=gamma, similarity_penalty=similarity_penalty, last_dpt=last_dpt, verbose=verbose, windowed=windowed_mse)
                 if verbose:
                     print('GSS DURATION', time.time()-t0)
                 # chose which is better 
                 if last_depth_map_golden is None:
                     last_depth_map_golden = depth_map_golden
                 else:
-                    mse = section_search.objective_full(depth_map_golden, aif, defocus_stack, indices=indices, template_A_stack=template_A_stack, beta=beta, proxy=dpt_proxy, gamma=0, similarity_penalty=False, last_dpt=None)
-                    last_mse = section_search.objective_full(last_depth_map_golden, aif, defocus_stack, indices=indices, template_A_stack=template_A_stack, beta=beta, proxy=dpt_proxy, gamma=0, similarity_penalty=False, last_dpt=None)
+                    mse = section_search.objective_full(depth_map_golden, aif, defocus_stack, indices=indices, template_A_stack=template_A_stack, beta=beta, proxy=dpt_proxy, gamma=0, similarity_penalty=False, last_dpt=None, windowed=windowed_mse)
+                    last_mse = section_search.objective_full(last_depth_map_golden, aif, defocus_stack, indices=indices, template_A_stack=template_A_stack, beta=beta, proxy=dpt_proxy, gamma=0, similarity_penalty=False, last_dpt=None, windowed=windowed_mse)
                     last_depth_map_golden = np.where(mse <= last_mse, depth_map_golden, last_depth_map_golden)
                     
             # if last_depth_map_golden is not None:

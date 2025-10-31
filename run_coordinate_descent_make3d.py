@@ -18,7 +18,7 @@ import initialization
 # globals
 IMAGE_RANGE = 255.
 #FORWARD_KERNEL_TYPE = 'gaussian'
-EXPERIMENT_NAME = 'mobile-depth-'
+EXPERIMENT_NAME = 'make3d-'
 windowed_MSE = True
 globals.window_size = 5
 globals.thresh = 2
@@ -26,43 +26,38 @@ if windowed_MSE:
     EXPERIMENT_NAME += "fullywindowed"+str(globals.window_size)+"-"
 EXPERIMENT_NAME += "thresh"+str(globals.thresh)+"-"
 
-def load_image(example_name):
+def load_image(img_name = "img-math7-p-282t0.jpg"):
 
-    globals.init_MobileDepth()
+    globals.init_Make3D()
 
     global EXPERIMENT_NAME
-    EXPERIMENT_NAME += example_name
+    EXPERIMENT_NAME += img_name.split("img-")[1].split(".jpg")[0]
 
-    
-    IMAGE_RANGE = 255.
-    assert example_name in ["keyboard", "bottles", "fruits", "metals", "plants", "telephone", "window", "largemotion", "smallmotion", "zeromotion", "balls"]
-    
-    defocus_stack, dpt_result, scale_mat = utils.load_single_sample_MobileDepth(example_name)
-    
-    defocus_stack = np.stack([
-        skimage.transform.resize(img, (img.shape[0] // 2, img.shape[1] // 2), anti_aliasing=True)
-        for img in defocus_stack
-    ], axis=0) # half size so its easy to compute
-    
-    defocus_stack *= IMAGE_RANGE 
-    
-    print('Pixel size:', globals.ps)
+    IIMAGE_RANGE = 255.
+    gt_aif, gt_dpt = utils.load_single_sample_Make3D(img_name = img_name, data_dir = "/data/holly_jackson/")
+    gt_aif = gt_aif * IMAGE_RANGE
     
     
-    fs, width, height, _ = defocus_stack.shape
-    print(fs, width, height)
-    print(dpt_result.dtype, defocus_stack.dtype)
+    gt_dpt_resized = skimage.transform.resize(
+        gt_dpt,
+        output_shape=(460, 345), # (height, width)
+        order=1,                  # bilinear interpolation
+        anti_aliasing=True,
+        preserve_range=True       # keep values in [0, 255] if original was uint8
+    )
     
-    globals.min_Z = max(0.1, globals.Df.min() - 3)
-    globals.max_Z = min(100, globals.Df.max() + 3)
-    print('Depth range', globals.min_Z,'-', globals.max_Z)
-
+    plt.imshow(gt_dpt_resized)
+    plt.colorbar()
+    plt.show()
     
+    width, height, _ = gt_aif.shape
     max_kernel_size = utils.kernel_size_heuristic(width, height)
     print('adaptive kernel size set to',max_kernel_size)
     utils.update_max_kernel_size(max_kernel_size)
 
-    return defocus_stack
+    defocus_stack = forward_model.forward(gt_dpt_resized, gt_aif)
+    
+    return defocus_stack, gt_aif, gt_dpt_resized
 
 
 def aif_initialization(defocus_stack):
@@ -82,7 +77,7 @@ def coord_descent(defocus_stack, num_epochs = 40,
                   save_plots = True, 
                   least_squares_first = False,
                   depth_init = None, aif_init = None,
-                  vmin = 0.1, vmax = 10, windowed_MSE = False):
+                  vmin = 0.1, vmax = 10, num_Z = 100, windowed_MSE = False):
     # -------------------
     # COORDINATE DESCENT
     # -------------------
@@ -96,7 +91,7 @@ def coord_descent(defocus_stack, num_epochs = 40,
             least_squares_first = least_squares_first,
             depth_init = depth_init, aif_init = aif_init, 
             k = 1, aif_method = 'fista',
-            finite_differences = False, num_Z = 100, 
+            finite_differences = False, num_Z = num_Z, 
             ls_maxiter = 200, ls_maxiter_multiplier = 1.05, 
             vmin = vmin, vmax = vmax,
             min_Z = globals.min_Z, max_Z = globals.max_Z,
@@ -116,19 +111,18 @@ def main():
     example_name = sys.argv[1]
 
     # load image
-    defocus_stack = load_image(example_name)
+    defocus_stack, gt_aif, gt_dpt = load_image(example_name)
 
     # aif initialization
     aif_init = aif_initialization(defocus_stack)
     
     # coord descent
-    # globals.window = 3
     dpt, aif, exp_folder = coord_descent(
         defocus_stack, save_plots = True,
         num_epochs = 40, least_squares_first = False,
         aif_init = aif_init,
         vmin = globals.min_Z, vmax = globals.max_Z,
-        windowed_MSE = windowed_MSE
+        num_Z = 500, windowed_MSE = windowed_MSE
     )
 
     # save final 
@@ -138,15 +132,15 @@ def main():
     utils.save_aif(exp_folder, 'aif', aif)
 
     # final metrics save to file
-    # rms = utils.compute_RMS(dpt, gt_dpt)
-    # rel = utils.compute_AbsRel(dpt, gt_dpt)
-    # deltas = utils.compute_accuracy_metrics(dpt, gt_dpt)
-    # outfile = os.path.join(exp_folder, "accuracy_metrics.txt")
-    # delta_str = ", ".join(f"{float(deltas[d]):.6f}" for d in sorted(deltas.keys()))
-    # with open(outfile, "w", encoding="utf-8") as f:
-    #     f.write(f"RMS: {float(rms):.6f}\n")
-    #     f.write(f"Rel: {float(rel):.6f}\n")
-    #     f.write(f"Accuracy (δ1, δ2, δ3): {delta_str}\n")
+    rms = utils.compute_RMS(dpt, gt_dpt)
+    rel = utils.compute_AbsRel(dpt, gt_dpt)
+    deltas = utils.compute_accuracy_metrics(dpt, gt_dpt)
+    outfile = os.path.join(exp_folder, "accuracy_metrics.txt")
+    delta_str = ", ".join(f"{float(deltas[d]):.6f}" for d in sorted(deltas.keys()))
+    with open(outfile, "w", encoding="utf-8") as f:
+        f.write(f"RMS: {float(rms):.6f}\n")
+        f.write(f"Rel: {float(rel):.6f}\n")
+        f.write(f"Accuracy (δ1, δ2, δ3): {delta_str}\n")
 
 if __name__ == "__main__":
     main()
