@@ -38,7 +38,7 @@ def init_DefocusNet():
     Df = np.array([0.1, 0.15, 0.3, 0.7, 1.5], dtype=np.float32) # m
     f = 2.9 * 1e-3 # 2.9 mm --> m  
     D = f / 1. # f-number = 1.
-    ps = 1.2e-5 # 3.1e-3 / 256
+    ps = 36e-3 / 256.
     MAX_KERNEL_SIZE = 7
 
     min_Z = 0.1

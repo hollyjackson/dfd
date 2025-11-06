@@ -21,9 +21,9 @@ IMAGE_RANGE = 255.
 EXPERIMENT_NAME = 'make3d-'
 windowed_MSE = True
 globals.window_size = 5
-globals.thresh = 2
+globals.thresh = 0.5
 if windowed_MSE:
-    EXPERIMENT_NAME += "fullywindowed"+str(globals.window_size)+"-"
+    EXPERIMENT_NAME += "windowed"+str(globals.window_size)+"-"
 EXPERIMENT_NAME += "thresh"+str(globals.thresh)+"-"
 
 def load_image(img_name = "img-math7-p-282t0.jpg"):
@@ -119,14 +119,14 @@ def main():
     # coord descent
     dpt, aif, exp_folder = coord_descent(
         defocus_stack, save_plots = True,
-        num_epochs = 40, least_squares_first = False,
+        num_epochs = 10, least_squares_first = False,
         aif_init = aif_init,
         vmin = globals.min_Z, vmax = globals.max_Z,
-        num_Z = 500, windowed_MSE = windowed_MSE
+        num_Z = 200, windowed_MSE = windowed_MSE
     )
 
     # save final 
-    utils.save_dpt(exp_folder, 'dpt', dpt)
+    utils.save_dpt_npy(exp_folder, 'dpt', dpt)
     # print(aif.min(), aif.max())
     # assert aif.min() > 0 and aif.max() > 1 and aif.max() <= 255 # remove later
     utils.save_aif(exp_folder, 'aif', aif)

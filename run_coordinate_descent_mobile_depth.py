@@ -21,9 +21,9 @@ IMAGE_RANGE = 255.
 EXPERIMENT_NAME = 'mobile-depth-'
 windowed_MSE = True
 globals.window_size = 5
-globals.thresh = 2
+globals.thresh = 0.5
 if windowed_MSE:
-    EXPERIMENT_NAME += "fullywindowed"+str(globals.window_size)+"-"
+    EXPERIMENT_NAME += "windowed"+str(globals.window_size)+"-"
 EXPERIMENT_NAME += "thresh"+str(globals.thresh)+"-"
 
 def load_image(example_name):
@@ -42,10 +42,11 @@ def load_image(example_name):
     defocus_stack = np.stack([
         skimage.transform.resize(img, (img.shape[0] // 2, img.shape[1] // 2), anti_aliasing=True)
         for img in defocus_stack
-    ], axis=0) # half size so its easy to compute
+    ], axis=0) 
     
     defocus_stack *= IMAGE_RANGE 
-    
+
+    globals.ps = 2 # 1 pixel in distance = 0.5 pixel in image 
     print('Pixel size:', globals.ps)
     
     
@@ -53,8 +54,8 @@ def load_image(example_name):
     print(fs, width, height)
     print(dpt_result.dtype, defocus_stack.dtype)
     
-    globals.min_Z = max(0.1, globals.Df.min() - 3)
-    globals.max_Z = min(100, globals.Df.max() + 3)
+    globals.min_Z = 1#max(0.1, globals.Df.min() - 3)
+    globals.max_Z = 70#min(100, globals.Df.max() + 3)
     print('Depth range', globals.min_Z,'-', globals.max_Z)
 
     
@@ -125,7 +126,7 @@ def main():
     # globals.window = 3
     dpt, aif, exp_folder = coord_descent(
         defocus_stack, save_plots = True,
-        num_epochs = 40, least_squares_first = False,
+        num_epochs = 20, least_squares_first = False,
         aif_init = aif_init,
         vmin = globals.min_Z, vmax = globals.max_Z,
         windowed_MSE = windowed_MSE

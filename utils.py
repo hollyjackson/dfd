@@ -543,6 +543,9 @@ def save_dpt(path, fn, dpt):
     dpt_scaled = (dpt * 1e4).astype(np.float32)
     skimage.io.imsave(os.path.join(path, fn + '.tiff'), dpt_scaled)
 
+def save_dpt_npy(path, fn, dpt):
+     numpy.save(os.path.join(path, fn + '.npy'), dpt, allow_pickle=True)
+
 def save_aif(path, fn, aif):
     skimage.io.imsave(os.path.join(path, fn + '.tiff'), aif.squeeze().astype(np.float32))
 
