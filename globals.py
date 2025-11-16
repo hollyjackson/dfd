@@ -23,7 +23,7 @@ def init_NYUv2():
 
     min_Z = 0.1
     max_Z = 10. # m
-    # thresh = 2
+    thresh = 2
 
 def init_DefocusNet():
     global f
@@ -58,12 +58,12 @@ def init_MobileDepth():
     MAX_KERNEL_SIZE = 7
     ps = 1 # all things are unitless / already in "pixels" from calib data
 #     
-#     # these are approximate settings using by Si  
-#     f = 50 * 1e-3
-#     D = f / 24. # fnumber = 24
-#     ps = 5.6e-6
-#     min_Z = 0.1
-#     max_Z = 10. # maybe use 50 inches idk?
+    # these are approximate settings using by Si  
+    # f = 50 * 1e-3
+    # D = f / 24. # fnumber = 24
+    # ps = 5.6e-6
+    # min_Z = 0.1
+    # max_Z = 10. # maybe use 50 inches idk?
 
 def init_Make3D():
     global f
@@ -75,7 +75,7 @@ def init_Make3D():
     global min_Z
     global max_Z
 
-    min_Z = 0.01 # ~0
+    min_Z = 0.01 # ~0.1
     max_Z = 80 # or 70 m
     
     Df = np.array([1, 2, 4, 8, 16, 32, 64], dtype=np.float32)

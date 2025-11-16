@@ -20,13 +20,13 @@ IMAGE_RANGE = 255.
 #FORWARD_KERNEL_TYPE = 'gaussian'
 EXPERIMENT_NAME = 'mobile-depth-'
 windowed_MSE = True
-globals.window_size = 5
-globals.thresh = 0.5
+globals.window_size = 75
+globals.thresh = 0.5#5
 if windowed_MSE:
     EXPERIMENT_NAME += "windowed"+str(globals.window_size)+"-"
 EXPERIMENT_NAME += "thresh"+str(globals.thresh)+"-"
 
-def load_image(example_name):
+def load_image(example_name, min_Z, max_Z):
 
     globals.init_MobileDepth()
 
@@ -39,23 +39,31 @@ def load_image(example_name):
     
     defocus_stack, dpt_result, scale_mat = utils.load_single_sample_MobileDepth(example_name)
     
+    #globals.window_size = 25
+    rad = globals.window_size // 2
+    
+    globals.ps = 0.75 * 2
+    
     defocus_stack = np.stack([
+        np.pad(np.rot90(
         skimage.transform.resize(img, (img.shape[0] // 2, img.shape[1] // 2), anti_aliasing=True)
+            , k=-1),
+               ((rad, rad), (rad, rad), (0, 0)), mode='edge')
         for img in defocus_stack
-    ], axis=0) 
+    ], axis=0)
     
     defocus_stack *= IMAGE_RANGE 
 
-    globals.ps = 2 # 1 pixel in distance = 0.5 pixel in image 
-    print('Pixel size:', globals.ps)
+    #globals.ps = 2 # 1 pixel in distance = 0.5 pixel in image 
+    # print('Pixel size:', globals.ps)
     
     
     fs, width, height, _ = defocus_stack.shape
     print(fs, width, height)
     print(dpt_result.dtype, defocus_stack.dtype)
     
-    globals.min_Z = 1#max(0.1, globals.Df.min() - 3)
-    globals.max_Z = 70#min(100, globals.Df.max() + 3)
+    globals.min_Z = min_Z
+    globals.max_Z = max_Z
     print('Depth range', globals.min_Z,'-', globals.max_Z)
 
     
@@ -98,10 +106,10 @@ def coord_descent(defocus_stack, num_epochs = 40,
             depth_init = depth_init, aif_init = aif_init, 
             k = 1, aif_method = 'fista',
             finite_differences = False, num_Z = 100, 
-            ls_maxiter = 200, ls_maxiter_multiplier = 1.05, 
+            ls_maxiter = 10, ls_maxiter_multiplier = 2, 
             vmin = vmin, vmax = vmax,
             min_Z = globals.min_Z, max_Z = globals.max_Z,
-            verbose = False, windowed_mse = windowed_MSE
+            verbose = False, windowed_mse = windowed_MSE, test=True
     )
 
     
@@ -110,30 +118,33 @@ def coord_descent(defocus_stack, num_epochs = 40,
 
 def main():
     # Ensure correct usage
-    if len(sys.argv) != 2:
-        print("Usage: python run_coordinate_descent.py <example_name>")
+    if len(sys.argv) != 4:
+        print("Usage: python run_coordinate_descent.py <example_name> <min_Z> <max_Z>")
         sys.exit(1)
 
     example_name = sys.argv[1]
+    min_Z = float(sys.argv[2])
+    max_Z = float(sys.argv[3])
 
     # load image
-    defocus_stack = load_image(example_name)
+    defocus_stack = load_image(example_name, min_Z, max_Z)
 
     # aif initialization
     aif_init = aif_initialization(defocus_stack)
+    # depth_init = 20
     
     # coord descent
     # globals.window = 3
     dpt, aif, exp_folder = coord_descent(
         defocus_stack, save_plots = True,
-        num_epochs = 20, least_squares_first = False,
+        num_epochs = 5, least_squares_first = False,
         aif_init = aif_init,
         vmin = globals.min_Z, vmax = globals.max_Z,
         windowed_MSE = windowed_MSE
     )
 
     # save final 
-    utils.save_dpt(exp_folder, 'dpt', dpt)
+    utils.save_dpt_npy(exp_folder, 'dpt', dpt)
     # print(aif.min(), aif.max())
     # assert aif.min() > 0 and aif.max() > 1 and aif.max() <= 255 # remove later
     utils.save_aif(exp_folder, 'aif', aif)

@@ -151,8 +151,16 @@ def windowed_mse_grid(defocus_stack, pred):#, window_size=5):
             losses[i_start:i_end, j_start:j_end] += mse[i_start+i:i_end+i, j_start+j:j_end+j]
             denom[i_start:i_end, j_start:j_end] += 1
     return losses / denom
+
+
+def windowed_mse_grid_v2(defocus_stack, pred):#, window_size=5):
+    if globals.window_size % 2 == 0:
+        globals.window_size += 1
+    mse = np.mean((defocus_stack - pred)**2, axis=(0, -1))
+    win_mean = scipy.ndimage.uniform_filter(mse, size=globals.window_size, mode='nearest')
+    return win_mean
     
-def objective_full(depth_map, gt_aif, defocus_stack, indices=None, template_A_stack=None, pred=None, beta=0, proxy=None, gamma=0, similarity_penalty=False, last_dpt=None, windowed=False): 
+def objective_full(depth_map, gt_aif, defocus_stack, indices=None, template_A_stack=None, pred=None, beta=0, proxy=None, gamma=0, similarity_penalty=False, last_dpt=None, windowed=False, test=False): 
 
     # if isinstance(depth_map, np.ndarray):
     #     depth_map_torch = torch.from_numpy(depth_map).to(defocus_stack_torch.device)
@@ -167,8 +175,13 @@ def objective_full(depth_map, gt_aif, defocus_stack, indices=None, template_A_st
         if grid_search:
             if pred is None:# and ((not windowed) or (windowed and grid_search)):
                 pred = forward_model.forward(depth_map, gt_aif, indices=indices, template_A_stack=template_A_stack)
-            loss = windowed_mse_grid(defocus_stack, pred)
+            if test:
+                # print('test')
+                loss = windowed_mse_grid_v2(defocus_stack, pred)
+            else:
+                loss = windowed_mse_grid(defocus_stack, pred)
         else:
+            print('here')
             loss = windowed_mse_gss(depth_map, gt_aif, defocus_stack, indices=indices, template_A_stack=template_A_stack)
     else:
         if pred is None:# and ((not windowed) or (windowed and grid_search)):
@@ -272,7 +285,7 @@ def new_local_min_heuristic(all_losses):
 
     return local_mins
 
-def grid_search_opt_k(gt_aif, defocus_stack, indices=None, min_Z = 0.1, max_Z = 10, num_Z = 100, k = 3, beta=0, proxy=None, gamma=0, similarity_penalty=False, last_dpt=None, gss_window=1, verbose=True, windowed=False):
+def grid_search_opt_k(gt_aif, defocus_stack, indices=None, min_Z = 0.1, max_Z = 10, num_Z = 100, k = 3, beta=0, proxy=None, gamma=0, similarity_penalty=False, last_dpt=None, gss_window=1, verbose=True, windowed=False, test=False):
     # try many values of Z
     Z = np.linspace(min_Z, max_Z, num_Z, dtype=np.float32)
 
@@ -300,7 +313,7 @@ def grid_search_opt_k(gt_aif, defocus_stack, indices=None, min_Z = 0.1, max_Z = 
                 defocus_stack_pred[j,:,:,c] = scipy.ndimage.convolve(gt_aif[:,:,c], kernel, mode='constant')
         
         dpt = np.ones((width,height), dtype=np.float32) * Z[i]
-        all_losses[:,:,i] = objective_full(dpt, gt_aif, defocus_stack, indices=indices, pred=defocus_stack_pred, beta=beta, proxy=proxy, gamma=gamma, similarity_penalty=similarity_penalty, last_dpt=last_dpt, windowed=windowed)
+        all_losses[:,:,i] = objective_full(dpt, gt_aif, defocus_stack, indices=indices, pred=defocus_stack_pred, beta=beta, proxy=proxy, gamma=gamma, similarity_penalty=similarity_penalty, last_dpt=last_dpt, windowed=windowed, test=test)
         # all_losses[:,:,i] = objective_full(dpt, gt_aif, defocus_stack, indices=indices, pred=defocus_stack_pred, beta=beta, proxy=proxy, gamma=gamma, similarity_penalty=similarity_penalty, last_dpt=last_dpt, windowed=True)
 
     sorted_indices = np.argsort(all_losses, axis=2)

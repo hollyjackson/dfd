@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 from datetime import datetime
 
 import skimage
-from PIL import Image
+from PIL import Image, ImageOps
 import cv2
 
 import OpenEXR
@@ -383,7 +383,7 @@ def load_single_sample_MobileDepth(example_name="keyboard", res='full'):
     assert len(set(apertures)) == 1
 
     # set globals
-    globals.Df = np.array(focal_depths) # unitless
+    globals.Df = np.array(focal_depths, dtype=np.float32) # unitless
     globals.f = focal_length # unitless
     globals.D = set(apertures).pop() # unitless confirmed by Supasorn
 
@@ -424,7 +424,7 @@ def load_single_sample_MobileDepth(example_name="keyboard", res='full'):
     #     data = np.frombuffer(f.read(), dtype=dtype)
     #     mat = data.reshape(h, w)
 
-    dpt_result = mat
+    dpt_result = mat.astype(np.float32)
     # dpt_result = 1.0 / mat # invert 
     # mn, mx = np.min(dpt_result), np.max(dpt_result)
     # dpt_result = (dpt_result - mn) / (mx - mn)
@@ -468,11 +468,18 @@ def load_single_sample_Make3D(img_name = "img-math7-p-282t0.jpg", data_dir = "/d
     print("Aperture diameter (m):", globals.D)
 
     # load image 
-    aif = np.array(Image.open(img_filename), dtype=np.float32) / 255.
+    if img_name == "img-op29-p-295t000.jpg": # this img is broken
+        im = Image.open(img_filename)
+        im = ImageOps.exif_transpose(im)
+        im_rgb = im.convert("RGB")
+        arr = np.array(im_rgb, dtype=np.float32) / 255.
+    else:
+        aif = np.array(Image.open(img_filename), dtype=np.float32) / 255.
+    
     image_width_px = aif.shape[0]   # Make3D image width
     # resize data as recommended by Saxena papers and Gur (460 × 345)
-    plt.imshow(aif)
-    plt.show()
+    # plt.imshow(aif)
+    # plt.show()
     print(aif.shape)
 
     aif = skimage.transform.resize(
@@ -482,14 +489,15 @@ def load_single_sample_Make3D(img_name = "img-math7-p-282t0.jpg", data_dir = "/d
         anti_aliasing=True,
         preserve_range=True       # keep values in [0, 255] if original was uint8
     )
-    plt.imshow(aif)
-    plt.show()
+    # plt.imshow(aif)
+    # plt.show()
     # print(aif.shape)
     
     # https://www.digicamdb.com/specs/canon_powershot-s40/
     # 1/1.8" (~ 7.11 x 5.33 mm)  
     sensor_width_m = 7.11e-3  # Canon PowerShot S40, lookup value
     globals.ps = sensor_width_m / image_width_px * (image_width_px / aif.shape[0])
+    # print(sensor_width_m,'/',image_width_px, '* (', image_width_px,'/', aif.shape[0],')')
     print("Pixel size (m/pix):", globals.ps)
 
     part = img_name.split("img-")[1].split(".jpg")[0]
@@ -502,12 +510,16 @@ def load_single_sample_Make3D(img_name = "img-math7-p-282t0.jpg", data_dir = "/d
     dpt = np.array(data["Position3DGrid"], dtype=np.float32)    # access one variable
     # print(data['__header__'], data['__version__'], data['__globals__'])
     # print(dpt.shape, dpt.dtype)
-    assert np.all(dpt[:,:,:3] == 0)
+    # assert np.all(dpt[:,:,:3] == 0)
+    # for idx in range(3):
+    #     plt.imshow(dpt[:,:,idx])
+    #     plt.colorbar()
+    #     plt.show()
     dpt = dpt[:,:,3]
     
-    plt.imshow(dpt)
-    plt.colorbar()
-    plt.show()
+    # plt.imshow(dpt)
+    # plt.colorbar()
+    # plt.show()
 
     print('GT DPT Range:', dpt.min(),'-',dpt.max())
     
@@ -544,10 +556,18 @@ def save_dpt(path, fn, dpt):
     skimage.io.imsave(os.path.join(path, fn + '.tiff'), dpt_scaled)
 
 def save_dpt_npy(path, fn, dpt):
-     numpy.save(os.path.join(path, fn + '.npy'), dpt, allow_pickle=True)
+     np.save(os.path.join(path, fn + '.npy'), dpt, allow_pickle=True)
+
+def load_dpt_npy(path, fn):
+    return np.load(os.path.join(path, fn + '.npy'), allow_pickle=True)
 
 def save_aif(path, fn, aif):
     skimage.io.imsave(os.path.join(path, fn + '.tiff'), aif.squeeze().astype(np.float32))
+
+def load_aif(path, fn):
+    return skimage.io.imread(os.path.join(path, fn + '.tiff')).astype(np.float32)
+
+
 
 def load_sample_image(fs=5, res='half'):
     assert fs == 5 or fs == 10
@@ -643,6 +663,7 @@ def update_max_kernel_size(new_value):
 def kernel_size_heuristic(width, height):
     size = round(0.039 * (width + height) / 2)
     size = max(7, size)
+    # size = min(11, size) # cap the size?? so doesn't tank performance
     if size % 2 == 0:
         return size + 1
     return size

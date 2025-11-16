@@ -34,7 +34,7 @@ def load_image(img_name = "img-math7-p-282t0.jpg"):
     EXPERIMENT_NAME += img_name.split("img-")[1].split(".jpg")[0]
 
     IIMAGE_RANGE = 255.
-    gt_aif, gt_dpt = utils.load_single_sample_Make3D(img_name = img_name, data_dir = "/data/holly_jackson/")
+    gt_aif, gt_dpt = utils.load_single_sample_Make3D(img_name = img_name, data_dir = "/data/holly_jackson/", split='test')
     gt_aif = gt_aif * IMAGE_RANGE
     
     
@@ -84,7 +84,7 @@ def coord_descent(defocus_stack, num_epochs = 40,
     
     dpt, aif, _, exp_folder = coordinate_descent.coordinate_descent(
             defocus_stack,
-            experiment_folder='/data/holly_jackson/experiments',
+            experiment_folder='/data/holly_jackson/experiments/all-make3d-test',
             show_plots=False, save_plots=save_plots,
             experiment_name = EXPERIMENT_NAME, 
             num_epochs = num_epochs,
@@ -118,11 +118,11 @@ def main():
     
     # coord descent
     dpt, aif, exp_folder = coord_descent(
-        defocus_stack, save_plots = True,
+        defocus_stack, save_plots = False,
         num_epochs = 10, least_squares_first = False,
         aif_init = aif_init,
         vmin = globals.min_Z, vmax = globals.max_Z,
-        num_Z = 200, windowed_MSE = windowed_MSE
+        num_Z = 100, windowed_MSE = windowed_MSE
     )
 
     # save final 

@@ -36,10 +36,10 @@ def compute_shifted_indices(width, height):
     # lim = int((float(max_kernel_size) - 1) / 2.)
     lim = max_kernel_size // 2
     
-    row_indices = np.zeros((width,height,max_kernel_size,max_kernel_size), dtype=np.int32)
-    col_indices  = np.zeros((width,height,max_kernel_size,max_kernel_size), dtype=np.int32)
+    row_indices = np.zeros((width,height,max_kernel_size,max_kernel_size), dtype=np.intp)
+    col_indices  = np.zeros((width,height,max_kernel_size,max_kernel_size), dtype=np.intp)
     
-    grid = np.meshgrid(np.arange(width), np.arange(height), indexing='ij')
+    grid = np.meshgrid(np.arange(width, dtype=np.intp), np.arange(height, dtype=np.intp), indexing='ij')
     indices = np.stack(grid, axis=-1)
 
     for i in range(-lim, lim+1):
@@ -68,18 +68,20 @@ def compute_mask_flattened_indices(row_indices, col_indices, mask, width, height
     
     flattened_indices = row_indices * (height) + col_indices
     
-    row = np.arange(width*height)
+    row = np.arange(width*height, dtype=np.intp)
     row = np.expand_dims(row, 1)
     row = np.tile(row, (1, max_kernel_size*max_kernel_size))
     row = row.flatten()
-    row = row[mask]#.astype(np.int64)
+    row = row[mask].astype(np.intp)
     
     col = flattened_indices.flatten()
-    col = col[mask]#.astype(torch.int64)
+    col = col[mask].astype(np.int32)
 
     return row, col
 
 def precompute_indices(width, height):#, max_kernel_size = 7):
+
+    print("precomputing indices")
     
     u, v = compute_u_v()#max_kernel_size = max_kernel_size)
     row_indices, col_indices = compute_shifted_indices(width, height)#, max_kernel_size = max_kernel_size)
@@ -109,37 +111,43 @@ def computer(dpt, Df):
     
     return r
 
-def computeG(r, u, v):
+def computeG_old(r, u, v):
     # compute Gaussian kernels
     G = np.exp(-(u**2 + v**2) / (2 * (r+1e-8)**2))        
+    # G = ((u**2 + v**2) <= r**2).astype(np.float32) # disc 
     
-    # # ignore r <= 1
-    # kernel = torch.zeros((globals.MAX_KERNEL_SIZE, globals.MAX_KERNEL_SIZE), dtype=G.dtype, device=G.device)
-    # kernel[globals.MAX_KERNEL_SIZE // 2, globals.MAX_KERNEL_SIZE // 2] = 1.
-    # mask3d = (r <= 2).squeeze(-1).squeeze(-1)
-    # G[mask3d] = kernel
-
-    # handle edge overflow -- THIS IS CAUSING ISSUES w/ COORD DESCENT
-    # # print(globals.MAX_KERNEL_SIZE // 2)
-    # if G.shape[0] > 1 and G.shape[1] > 1:
-    #     # print('doing edge overflow')
-    #     lim = globals.MAX_KERNEL_SIZE // 2
-    #     for i in range(lim):
-    #         if i < G.shape[0]:
-    #             G[i,:,:,:(lim-i),:] = 0
-    #         if i < G.shape[1]:
-    #             G[:,i,:,:,:(lim-i)] = 0
-    #         if (G.shape[0]-(i+1)) >= 0:
-    #             G[(G.shape[0]-(i+1)),:,:,(lim+1+i):,:] = 0
-    #         if (G.shape[1]-(i+1)) >= 0:
-    #             G[:,(G.shape[1]-(i+1)),:,:,(lim+1+i):] = 0
-
     # normalize gaussian kernels
     norm = np.sum(G, axis=(-2,-1), keepdims=True, dtype=np.float32)
     G /= (norm+1e-8)
 
     return G, norm
 
+def computeG(r, u, v, eps=1e-8):
+    # exploit Gaussian separability for speed up
+    u2 = (u[..., :, :1] ** 2).astype(np.float32)
+    v2 = (v[..., :1, :] ** 2).astype(np.float32)
+    inv2sigma2 = 1 / (2 * (r+eps)**2)
+    
+    # 1D Gaussians (broadcasted)
+    Gu = np.exp(-u2 * inv2sigma2)
+    Gv = np.exp(-v2 * inv2sigma2)
+    
+    # # normalize 1D, so the 2D outer will already be normalized
+    # sum_u = Gu.sum(axis=-2, keepdims=True) + eps
+    # sum_v = Gv.sum(axis=-1, keepdims=True) + eps
+    # Gu /= sum_u
+    # Gv /= sum_v
+    
+    # assemble full 2D kernel
+    G = Gu * Gv 
+    # norm = np.ones_like(sum_u, dtype=np.float32)
+
+    # normalize gaussian kernels
+    norm = np.sum(G, axis=(-2,-1), keepdims=True, dtype=np.float32)
+    G /= (norm+1e-8)
+    
+    return G, norm
+    
 def build_fixed_pattern_csr(width, height, fs, row, col, data, dtype=np.float32):
     row = np.asarray(row, dtype=np.int32)
     col = np.asarray(col, dtype=np.int32)
