@@ -17,7 +17,7 @@ import initialization
 # globals
 IMAGE_RANGE = 255.
 #FORWARD_KERNEL_TYPE = 'gaussian'
-EXPERIMENT_NAME = 'nyuv2-'
+EXPERIMENT_NAME = 'nyuv2-train-'
 
 def load_image(image_number):
     globals.init_NYUv2()
@@ -80,7 +80,7 @@ def coord_descent(defocus_stack, num_epochs = 40,
     
     dpt, aif, _, exp_folder = coordinate_descent.coordinate_descent(
             defocus_stack,
-            experiment_folder='/data/holly_jackson/experiments',
+            experiment_folder='/data/holly_jackson/nyuv2-train-v3/',
             show_plots=False, save_plots=save_plots,
             experiment_name = EXPERIMENT_NAME, 
             num_epochs = num_epochs,
@@ -88,8 +88,9 @@ def coord_descent(defocus_stack, num_epochs = 40,
             depth_init = depth_init, aif_init = aif_init, 
             k = 1, aif_method = 'fista',
             finite_differences = False, num_Z = 100, 
-            ls_maxiter = 10, ls_maxiter_multiplier = 2, 
+            ls_maxiter = 50, ls_maxiter_multiplier = 2, 
             vmin = vmin, vmax = vmax,
+            min_Z = globals.min_Z, max_Z = globals.max_Z,
             verbose = False
     )
 
@@ -114,12 +115,13 @@ def main():
     # aif initialization
     aif_init = aif_initialization(defocus_stack)
 
+    print(globals.min_Z, globals.max_Z)
+
     # coord descent
     dpt, aif, exp_folder = coord_descent(
         defocus_stack, save_plots = False,
-        num_epochs = 5, least_squares_first = False,
-        aif_init = aif_init,
-        vmin = 0.1, vmax = 10
+        num_epochs = 10, least_squares_first = False,
+        aif_init = aif_init
     )
 
     # save final 

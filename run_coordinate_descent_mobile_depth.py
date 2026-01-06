@@ -20,8 +20,8 @@ IMAGE_RANGE = 255.
 #FORWARD_KERNEL_TYPE = 'gaussian'
 EXPERIMENT_NAME = 'mobile-depth-'
 windowed_MSE = True
-globals.window_size = 75
-globals.thresh = 0.5#5
+globals.window_size = 50
+globals.thresh = 0.1#5
 if windowed_MSE:
     EXPERIMENT_NAME += "windowed"+str(globals.window_size)+"-"
 EXPERIMENT_NAME += "thresh"+str(globals.thresh)+"-"
@@ -105,8 +105,8 @@ def coord_descent(defocus_stack, num_epochs = 40,
             least_squares_first = least_squares_first,
             depth_init = depth_init, aif_init = aif_init, 
             k = 1, aif_method = 'fista',
-            finite_differences = False, num_Z = 100, 
-            ls_maxiter = 10, ls_maxiter_multiplier = 2, 
+            finite_differences = False, num_Z = 200, 
+            ls_maxiter = 50, ls_maxiter_multiplier = 2, 
             vmin = vmin, vmax = vmax,
             min_Z = globals.min_Z, max_Z = globals.max_Z,
             verbose = False, windowed_mse = windowed_MSE, test=True
@@ -136,8 +136,8 @@ def main():
     # coord descent
     # globals.window = 3
     dpt, aif, exp_folder = coord_descent(
-        defocus_stack, save_plots = True,
-        num_epochs = 5, least_squares_first = False,
+        defocus_stack, save_plots = False,
+        num_epochs = 7, least_squares_first = False,
         aif_init = aif_init,
         vmin = globals.min_Z, vmax = globals.max_Z,
         windowed_MSE = windowed_MSE
