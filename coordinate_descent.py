@@ -9,6 +9,7 @@ import nesterov
 import section_search
 import torch
 import initialization
+import outlier_removal
 
 import cv2 as cv
 import math
@@ -61,7 +62,7 @@ def coordinate_descent(defocus_stack,  experiment_folder='experiments', gss_tol 
         loss = mse_loss(forward_model.forward(dpt, aif, indices=indices, template_A_stack=template_A_stack), defocus_stack)
         losses.append(loss)
         if verbose:
-            print('Loss:',loss, ', TV:',section_search.total_variation(aif))
+            print('Loss:',loss, ', TV:',outlier_removal.total_variation(aif))
 
         if save_plots or show_plots:
             plt.imshow(aif / IMAGE_RANGE)
@@ -82,7 +83,7 @@ def coordinate_descent(defocus_stack,  experiment_folder='experiments', gss_tol 
         a_b_init = None
         t0 = time.time()
         
-        depth_map, Z, min_indices, all_losses = section_search.grid_search_opt_k(aif, defocus_stack, indices=indices, min_Z=min_Z, max_Z=max_Z, num_Z=num_Z, last_dpt=last_dpt, gss_window=gss_window, verbose=verbose, windowed=windowed_mse)
+        depth_map, Z, min_indices, all_losses = section_search.grid_search(aif, defocus_stack, indices=indices, min_Z=min_Z, max_Z=max_Z, num_Z=num_Z, last_dpt=last_dpt, gss_window=gss_window, verbose=verbose, windowed=windowed_mse)
         
         # k_min_indices = np.squeeze(k_min_indices)
         # depth_maps = np.squeeze(depth_maps)
@@ -124,7 +125,7 @@ def coordinate_descent(defocus_stack,  experiment_folder='experiments', gss_tol 
         losses.append(loss)
 
         if verbose:
-            print('Loss:',loss,', TV:',section_search.total_variation(dpt))
+            print('Loss:',loss,', TV:',outlier_removal.total_variation(dpt))
             print('\nDPT result range: [',dpt.min(), ',', dpt.max(),']')
 
         
@@ -263,7 +264,7 @@ def coordinate_descent(defocus_stack,  experiment_folder='experiments', gss_tol 
 
     # OPTIONAL -- remove outliers
     if remove_outliers:
-        dpt, _ = section_search.remove_outliers(dpt, aif, diff_thresh = diff_thresh, tv_thresh = tv_thresh, patch_type = outlier_patch_type)
+        dpt, _ = outlier_removal.remove_outliers(dpt, aif, diff_thresh = diff_thresh, tv_thresh = tv_thresh, patch_type = outlier_patch_type)
         if save_plots or show_plots:
             plt.imshow(dpt, vmin=vmin, vmax=vmax)
             plt.colorbar()

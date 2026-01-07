@@ -1,18 +1,12 @@
-# import os
 import numpy as np
 import matplotlib.pyplot as plt
 import scipy
 import math
 
-# import utils
 import forward_model
 import globals
 
-# from scipy.optimize import curve_fit
-# from concurrent.futures import ThreadPoolExecutor, as_completed
 import tqdm
-
-# import torch
 
 invphi = (math.sqrt(5) - 1) / 2  # 1 / phi
 
@@ -43,7 +37,7 @@ def windowed_mse_gss(depth_map, gt_aif, defocus_stack, indices=None, template_A_
             
     return losses / denom
 
-def windowed_mse_grid(defocus_stack, pred):#, window_size=5):
+def windowed_mse_grid(defocus_stack, pred):
     if globals.window_size % 2 == 0:
         globals.window_size += 1
     rad = globals.window_size // 2
@@ -64,8 +58,8 @@ def windowed_mse_grid(defocus_stack, pred):#, window_size=5):
             denom[i_start:i_end, j_start:j_end] += 1
     return losses / denom
 
-
 # def windowed_mse_grid_v2(defocus_stack, pred):
+#     # more efficient version, forgot to use in final version, TODO: put back in but double check its producing the same exact results 
 #     if globals.window_size % 2 == 0:
 #         globals.window_size += 1
 #     mse = np.mean((defocus_stack - pred)**2, axis=(0, -1))
@@ -90,98 +84,7 @@ def objective_full(depth_map, gt_aif, defocus_stack, indices=None, template_A_st
         loss = np.mean((defocus_stack - pred)**2, axis=(0, -1))
     return loss
 
-
-# def k_min_indices_no_overlap(sorted_indices, k, gss_window=1):
-#     width, height, num_Z = sorted_indices.shape
-#     k_min_indices = np.zeros((width, height, k), dtype=np.int32) - 1
-#     k_min_indices[:,:,0] = sorted_indices[:,:,0]
-    
-#     # last_z = sorted_indices[:,:,0]
-#     kk = np.ones((width, height), dtype=np.int32)
-    
-#     for z in range(1, num_Z):
-#         # mask = (abs(sorted_indices[:,:,z] - last_z) > gss_window) & (kk < k)
-#         mask = kk < k
-#         for l in range(k):
-#             too_close = (abs(sorted_indices[:,:,z] - k_min_indices[:,:,l]) <= gss_window) & (k_min_indices[:,:,l] >= 0)
-#             mask = mask & ~too_close
-#         if not np.any(mask):
-#             continue
-#         i, j = np.where(mask)
-#         k_min_indices[i, j, kk[i,j]] = sorted_indices[:,:,z][i, j]
-#         # last_z[i, j] = sorted_indices[:,:,z][i,j]
-#         kk[i, j] += 1
-#         if np.all(kk >= k):
-#             break
-
-#     assert np.all(k_min_indices >= 0)
-        
-#     return k_min_indices
-
-# def new_local_min_heuristic_vec(all_losses):
-#     # TODO -- takes forever, need to optimize if i actually want to keep this
-
-#     width, height, num_Z = all_losses.shape
-#     local_mins = np.zeros((width, height), dtype=int)
-#     sorted_indices = np.argsort(all_losses, axis=-1)
-
-#     window_length = int(0.1 * num_Z)
-#     if window_length < 5:
-#         window_length = 5
-#     if window_length % 2 == 0:
-#         window_length += 1
-
-#     diff = np.diff(all_losses, axis=-1)
-#     # d2 = np.gradient(np.gradient(losses, edge_order=2, axis=-1), edge_order=2, axis=-1)
-#     d2_savgol_filter = scipy.signal.savgol_filter(all_losses, axis=-1, window_length=window_length, polyorder=3, deriv=2, delta=1, mode='interp')
-#     # cross_indices = np.where(np.sign(diff[:,:,:-1]) * np.sign(diff[:,:,1:]) < 0)[0] + 1
-
-#     pass
-    
-
-def new_local_min_heuristic(all_losses):
-    # TODO -- takes forever, need to optimize if i actually want to keep this
-
-    width, height, num_Z = all_losses.shape
-    local_mins = np.zeros((width, height), dtype=int)
-    sorted_indices = np.argsort(all_losses, axis=-1)
-
-    window_length = int(0.1 * num_Z)
-    if window_length < 5:
-        window_length = 5
-    if window_length % 2 == 0:
-        window_length += 1
-
-    # diff = np.diff(all_losses, axis=-1)
-    # d2 = np.gradient(np.gradient(losses, edge_order=2, axis=-1), edge_order=2, axis=-1)
-    # d2_savgol_filter = scipy.signal.savgol_filter(all_losses, axis=-1, window_length=window_length, polyorder=3, deriv=2, delta=1, mode='interp')
-    # cross_indices = np.where(np.sign(diff[:,:,:-1]) * np.sign(diff[:,:,1:]) < 0)[0] + 1
-    
-
-
-    for i in range(width):
-        for j in range(height):
-    
-            losses = all_losses[i, j]
-        
-            diff = np.diff(losses)
-        
-            d2_savgol_filter = scipy.signal.savgol_filter(losses, window_length=window_length, polyorder=3, deriv=2, delta=1, mode='interp')
-            
-            cross_indices = np.where(np.sign(diff[:-1]) * np.sign(diff[1:]) < 0)[0] + 1
-                           
-            if len(cross_indices) > 0:
-                local_min = cross_indices[np.argmax(d2_savgol_filter[cross_indices])]
-                if d2_savgol_filter[local_min] > 0: # not positive 
-                    local_mins[i,j] = local_min
-                    continue
-
-            # just use minimum 
-            local_mins[i,j] = sorted_indices[i,j,0]
-
-    return local_mins
-
-def grid_search_opt_k(gt_aif, defocus_stack, indices=None, min_Z = 0.1, max_Z = 10, num_Z = 100, last_dpt=None, gss_window=1, verbose=True, windowed=False):
+def grid_search(gt_aif, defocus_stack, indices=None, min_Z = 0.1, max_Z = 10, num_Z = 100, last_dpt=None, gss_window=1, verbose=True, windowed=False):
     # try many values of Z
     Z = np.linspace(min_Z, max_Z, num_Z, dtype=np.float32)
 
@@ -321,132 +224,5 @@ def golden_section_search(Z, argmin_indices, gt_aif, defocus_stack, indices=None
 
     return dpt
     
-
-
-# Outlier removal 
-
-
-def total_variation(image):
-    tv_x = np.abs(image[:, 1:] - image[:, :-1])
-    tv_y = np.abs(image[1:, :] - image[:-1, :])
-    return np.sum(tv_x) + np.sum(tv_y)
-
-def compute_tv_map(image, patch_size = None):
-    if patch_size is not None:
-        assert patch_size % 2 != 0 # must be odd
-    if patch_size is None:
-        patch_size = globals.MAX_KERNEL_SIZE
-    
-    pad = patch_size // 2
-    width, height = image.shape[:2]
-
-    tv_map = np.zeros((width, height))
-    for i in range(pad, width - pad):
-        for j in range(pad, height - pad):
-            window = image[i - pad:i + pad + 1, j - pad:j + pad + 1]
-            tv_map[i, j] = total_variation(window) / patch_size**2
-
-    return tv_map
-
-
-
-def find_high_tv_patches(dpt, tv_thresh = 0.15, patch_size = None):
-    
-    tv_map = compute_tv_map(dpt, patch_size = patch_size)
-    problem_pixels = np.argwhere(tv_map > tv_thresh)
-
-    return problem_pixels, tv_map
-
-def find_constant_patches(aif, diff_thresh = 2, patch_size = None):
-    if patch_size is not None:
-        assert patch_size % 2 != 0 # must be odd
-    width, height, _ = aif.shape
-    if patch_size is None:
-        patch_size = globals.MAX_KERNEL_SIZE
-    rad = patch_size // 2
-    
-    # problem_pixels = []
-    # for i in range(width):
-    #     for j in range(height):
-    #         imin = max(i-rad, 0)
-    #         imax = min(i+rad+1, width)
-    #         jmin = max(j-rad, 0)
-    #         jmax = min(j+rad+1, height)
-    #         patch = aif[imin:imax, jmin:jmax]
-    #         red_diff = patch[:,:,0].max() - patch[:,:,0].min()
-    #         green_diff = patch[:,:,1].max() - patch[:,:,1].min()
-    #         blue_diff = patch[:,:,2].max() - patch[:,:,2].min()
-    #         if red_diff <= 2  and green_diff <= 2 and blue_diff <=2:
-    #             problem_pixels.append((i,j))
-
-    padded_aif = np.pad(aif, ((rad, rad), (rad, rad), (0, 0)), mode='edge')
-    patches = np.lib.stride_tricks.sliding_window_view(padded_aif, (patch_size, patch_size, 3))
-    patches = np.squeeze(patches)
-
-    max_vals = patches.max(axis=(2, 3))
-    min_vals = patches.min(axis=(2, 3))
-    color_diffs = max_vals - min_vals
-
-    mask = np.all(color_diffs <= diff_thresh, axis=2)
-
-    problem_pixels = np.argwhere(mask)
-
-    return problem_pixels
-
-
-
-def remove_outliers(depth_map, gt_aif, patch_type = 'tv', diff_thresh = 2, tv_thresh = 0.15, to_plot=True):
-    assert patch_type in ['tv', 'constant']
-    print("Removing outliers...")
-
-    # COULD REMOVE OUTLIERS IN HIGH-TV AREAS OF THE DEPTH MAP
-
-    if patch_type == 'constant':
-        problem_pixels = find_constant_patches(gt_aif, diff_thresh = diff_thresh)
-    else:
-        problem_pixels, tv_map = find_high_tv_patches(depth_map, tv_thresh = tv_thresh)
-    
-    problem_pixel_set = set(map(tuple, problem_pixels))
-    print('found',len(problem_pixel_set),'outliers')
-    
-    # target_pixel = np.array([21, 188])
-    # is_present = np.any(np.all(problem_pixels == target_pixel, axis=1))
-    # print(is_present)
-
-    if to_plot:
-        if patch_type == 'constant':
-            plt.imshow(gt_aif / 255.)
-        else:
-            plt.imshow(tv_map)
-            plt.colorbar()
-        plt.scatter([y for x, y in problem_pixels], [x for x, y in problem_pixels],
-            color='red', marker='x', s=50)
-        plt.title("Outliers ("+patch_type+')')
-        plt.show()
-    
-    removed = 0
-    lim = int((float(globals.MAX_KERNEL_SIZE) - 1) / 2.)
-    for i, j in problem_pixels:
-        patch = []
-        for dx in range(-lim, lim+1, 1):
-            for dy in range(-lim, lim+1, 1):
-                if i + dx < 0 or i + dx >= gt_aif.shape[0]:
-                    continue
-                if j + dy < 0 or j + dy >= gt_aif.shape[1]:
-                    continue
-                if (i + dx, j + dy) in problem_pixel_set:
-                    continue
-                if dx == 0 and dy == 0:
-                    continue
-                patch.append(depth_map[i+dx,j+dy])
-        if len(patch) != 0:
-            removed += 1
-            avg_depth = np.array(patch).mean(axis=0, keepdims=True)
-            depth_map[i,j] = avg_depth
-            problem_pixel_set.remove((i, j)) # remove so it can be used later 
-
-    print(removed,'/',len(problem_pixels),'outliers removed')
-    
-    return depth_map, (len(problem_pixels)/(depth_map.shape[0] * depth_map.shape[1]))
 
 
