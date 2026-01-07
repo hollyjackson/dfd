@@ -26,10 +26,10 @@ def mse_loss(pred, gt):
 
 
 
-def coordinate_descent_v2(defocus_stack,  experiment_folder='experiments', gss_tol = 1e-2, gss_window = 1, ls_maxiter = 100, ls_maxiter_multiplier = None, num_epochs = 25, least_squares_first = True, save_plots = True, show_plots = False, depth_init = None, aif_init = None, dpt_denoising_weight = None, aif_denoising_weight = None, dpt_denoise_delay = 10, experiment_name = 'coord-descent', vmin = 0.7, vmax = 1.9, proxy_opt = False, beta = 1e-3, multiplier = 1.1, remove_outliers = False, diff_thresh = 2, tv_thresh = 0.15, tv_thresh_min = 0.15, tv_thresh_multiplier = None, outlier_patch_type = 'tv', adaptive_grid = False, grid_window = 0.25, gamma = 1e-3, similarity_penalty = False, finite_differences = False, t = None, fd_maxiter = 100, epsilon = 1e-3, min_Z = 0.1, max_Z = 10, num_Z = 100, k = 1, aif_method='fista', verbose=True, windowed_mse=False, test=False):
-    assert not (finite_differences and adaptive_grid)
-    assert not (finite_differences and similarity_penalty)
-    assert aif_method in ['fista', 'ls']
+def coordinate_descent_v2(defocus_stack,  experiment_folder='experiments', gss_tol = 1e-2, gss_window = 1, T_0 = 100, alpha = None, num_epochs = 25, least_squares_first = True, save_plots = True, show_plots = False, depth_init = None, aif_init = None, experiment_name = 'coord-descent', vmin = 0.7, vmax = 1.9, remove_outliers = False, diff_thresh = 2, grid_window = 0.25, min_Z = 0.1, max_Z = 10, num_Z = 100, verbose=True, windowed_mse=False, test=False):
+    # assert not (finite_differences and adaptive_grid)
+    # assert not (finite_differences and similarity_penalty)
+    # assert aif_method in ['fista', 'ls']
 
     # important initializations ---------------------
     
@@ -37,8 +37,9 @@ def coordinate_descent_v2(defocus_stack,  experiment_folder='experiments', gss_t
     experiment_folder = utils.create_experiment_folder(EXPERIMENT_NAME, base_folder=experiment_folder)
 
     losses = []
+    T_i = T_0
     
-    fs = defocus_stack.shape[0]
+    fs = defocus_stack.shape[0]     # defocus stack size
     width = defocus_stack.shape[1]
     height = defocus_stack.shape[2]
     IMAGE_RANGE = 255. # if defocus stack in [0-255]
@@ -49,7 +50,7 @@ def coordinate_descent_v2(defocus_stack,  experiment_folder='experiments', gss_t
     elif verbose:
         print('Images in range [0-255]')
     
-    # precompute indices
+    # precompute indices + sparse matrix stack 
     indices = forward_model.precompute_indices(width, height)
     sample_data = np.random.rand(indices[2].size).astype(np.float32)
     template_A_stack = forward_model.build_fixed_pattern_csr(width, height, fs, indices[2], indices[3], sample_data)
@@ -61,7 +62,7 @@ def coordinate_descent_v2(defocus_stack,  experiment_folder='experiments', gss_t
         # bounded FISTA (Nesterov's accelerated gradient method)
         # ------------------------------------------------------
         t0 = time.time()
-        aif = least_squares.bounded_fista_3d(dpt, defocus_stack, IMAGE_RANGE, indices=indices, template_A_stack=template_A_stack, maxiter=ls_maxiter, verbose=verbose)
+        aif = least_squares.bounded_fista_3d(dpt, defocus_stack, IMAGE_RANGE, indices=indices, template_A_stack=template_A_stack, maxiter=T_i, verbose=verbose)
         if verbose:
             print('FISTA duration', time.time()-t0)
         
@@ -76,7 +77,7 @@ def coordinate_descent_v2(defocus_stack,  experiment_folder='experiments', gss_t
         if save_plots or show_plots:
             plt.imshow(aif / IMAGE_RANGE)
             if save_plots:
-                plt.savefig(os.path.join(iter_folder,'least_squares_'+str(i)+'.png'))
+                plt.savefig(os.path.join(iter_folder,'bounded_fista_'+str(i)+'.png'))
             if show_plots:
                 plt.show()
             else:
@@ -89,14 +90,17 @@ def coordinate_descent_v2(defocus_stack,  experiment_folder='experiments', gss_t
         # grid + backtracking search
         # ---------------------------
         
-            
         a_b_init = None
         t0 = time.time()
-        depth_maps, Z, k_min_indices, all_losses = section_search.grid_search_opt_k(aif, defocus_stack, indices=indices, min_Z=min_Z, max_Z=max_Z, num_Z=num_Z, k=k, beta=beta, gamma=gamma, similarity_penalty=similarity_penalty, last_dpt=last_dpt, gss_window=gss_window, verbose=verbose, windowed=windowed_mse, test=test)
+        
+        depth_maps, Z, k_min_indices, all_losses = section_search.grid_search_opt_k(aif, defocus_stack, k=1, indices=indices, min_Z=min_Z, max_Z=max_Z, num_Z=num_Z, last_dpt=last_dpt, gss_window=gss_window, verbose=verbose, windowed=windowed_mse, test=test)
+        
         k_min_indices = np.squeeze(k_min_indices)
         depth_maps = np.squeeze(depth_maps)
+        
         if verbose:
             print('GRID SEARCH DURATION', time.time()-t0)
+        
         if save_plots or show_plots:
             plt.imshow(depth_maps)
             plt.colorbar()
@@ -110,14 +114,10 @@ def coordinate_descent_v2(defocus_stack,  experiment_folder='experiments', gss_t
         
         # GSS
         t0 = time.time()
-        depth_map_golden = section_search.golden_section_search(Z, k_min_indices, aif, defocus_stack, indices=indices, template_A_stack=template_A_stack, window=gss_window, tolerance=gss_tol, a_b_init=a_b_init, beta=beta, gamma=gamma, similarity_penalty=similarity_penalty, last_dpt=last_dpt, verbose=verbose, windowed=False) 
+        depth_map_golden = section_search.golden_section_search(Z, k_min_indices, aif, defocus_stack, indices=indices, template_A_stack=template_A_stack, window=gss_window, tolerance=gss_tol, a_b_init=a_b_init, last_dpt=last_dpt, verbose=verbose, windowed=False)
         if verbose:
             print('GSS DURATION', time.time()-t0)
         
-        # mse = section_search.objective_full(depth_map_golden, aif, defocus_stack, indices=indices, template_A_stack=template_A_stack, beta=beta, proxy=dpt_proxy, gamma=0, similarity_penalty=False, last_dpt=None, windowed=False)
-        # last_mse = section_search.objective_full(last_depth_map_golden, aif, defocus_stack, indices=indices, template_A_stack=template_A_stack, beta=beta, proxy=dpt_proxy, gamma=0, similarity_penalty=False, last_dpt=None, windowed=False)
-        # last_depth_map_golden = np.where(mse <= last_mse, depth_map_golden, last_depth_map_golden)
-                
         if save_plots or show_plots:
             plt.imshow(depth_map_golden, vmin=vmin, vmax=vmax)
             plt.colorbar()
@@ -179,9 +179,9 @@ def coordinate_descent_v2(defocus_stack,  experiment_folder='experiments', gss_t
 
     
     last_dpt = None
-    if similarity_penalty and least_squares_first:
-        # last_dpt = torch.clone(dpt.detach())
-        last_dpt = np.copy(dpt)
+    # if similarity_penalty and least_squares_first:
+    #     # last_dpt = torch.clone(dpt.detach())
+    #     last_dpt = np.copy(dpt)
 
     # coordinate descent
     last_loss = float('inf')
@@ -201,11 +201,11 @@ def coordinate_descent_v2(defocus_stack,  experiment_folder='experiments', gss_t
 
         t0 = time.time()
         if least_squares_first:
-            aif, dpt = generate_AIF(aif, dpt, ls_maxiter, iter_folder=iter_folder)
-            aif, dpt = generate_DPT(aif, dpt, beta=beta, iter_folder=iter_folder, last_dpt=last_dpt)
+            aif, dpt = generate_AIF(aif, dpt, T_i, iter_folder=iter_folder)
+            aif, dpt = generate_DPT(aif, dpt, iter_folder=iter_folder, last_dpt=last_dpt)
         else:
-            aif, dpt = generate_DPT(aif, dpt, beta=beta, iter_folder=iter_folder, last_dpt=last_dpt)
-            aif, dpt = generate_AIF(aif, dpt, ls_maxiter, iter_folder=iter_folder)
+            aif, dpt = generate_DPT(aif, dpt, iter_folder=iter_folder, last_dpt=last_dpt)
+            aif, dpt = generate_AIF(aif, dpt, T_i, iter_folder=iter_folder)
         if verbose:
             print('FULL ITER DURATION', time.time()-t0)
         
@@ -214,14 +214,13 @@ def coordinate_descent_v2(defocus_stack,  experiment_folder='experiments', gss_t
             utils.save_dpt(iter_folder, 'dpt_'+str(i), dpt)
             utils.save_aif(iter_folder, 'aif_'+str(i), aif / IMAGE_RANGE)
         
-        beta *= multiplier
         # if similarity_penalty:
         last_dpt = np.copy(dpt)#torch.clone(dpt.detach())
 
-        if ls_maxiter_multiplier != None:
-            ls_maxiter = int(ls_maxiter * ls_maxiter_multiplier)
+        if alpha != None:
+            T_i = int(T_i * alpha)
             if verbose:
-                print('ls_maxiter updated to',ls_maxiter)
+                print('T_i updated to',T_i)
             # gss_tol = gss_tol / ls_maxiter_multiplier
             # print('gss_tol updated to', gss_tol)
 
@@ -286,7 +285,7 @@ def coordinate_descent_v2(defocus_stack,  experiment_folder='experiments', gss_t
             else:
                 plt.close()
         
-    return dpt, aif, ls_maxiter, experiment_folder
+    return dpt, aif, T_i, experiment_folder
     
 
 def coordinate_descent(defocus_stack,  experiment_folder='experiments', gss_tol = 1e-2, gss_window = 1, ls_maxiter = 100, ls_maxiter_multiplier = None, num_epochs = 25, least_squares_first = True, save_plots = True, show_plots = False, depth_init = None, aif_init = None, dpt_denoising_weight = None, aif_denoising_weight = None, dpt_denoise_delay = 10, experiment_name = 'coord-descent', vmin = 0.7, vmax = 1.9, proxy_opt = False, beta = 1e-3, multiplier = 1.1, remove_outliers = False, diff_thresh = 2, tv_thresh = 0.15, tv_thresh_min = 0.15, tv_thresh_multiplier = None, outlier_patch_type = 'tv', adaptive_grid = False, grid_window = 0.25, gamma = 1e-3, similarity_penalty = False, finite_differences = False, t = None, fd_maxiter = 100, epsilon = 1e-3, min_Z = 0.1, max_Z = 10, num_Z = 100, k = 1, aif_method='fista', verbose=True, windowed_mse=False, test=False):
