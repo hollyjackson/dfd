@@ -4,6 +4,7 @@ import utils
 
 import nesterov
 import section_search
+import dataset_loader
 
 import torch
 import skimage
@@ -141,7 +142,7 @@ def test_load_save_dpt():
     utils.save_dpt(path, fn, dpt_orig)
     
     # Load it back
-    dpt_loaded = utils.load_NYUv2_dpt(file_path, resize_frac=1)
+    dpt_loaded = dataset_loader.load_NYUv2_dpt(file_path, resize_frac=1)
     
     # Compare
     same = np.allclose(dpt_orig, dpt_loaded, rtol=1e-6, atol=0)
