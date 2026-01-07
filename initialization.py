@@ -1,16 +1,16 @@
 import numpy as np
-import cv2 as cv
+import cv2
 import scipy
 import gco
 import matplotlib.pyplot as plt
-import section_search
 import utils
 import globals
 
 # AIF initialization
+
 def compute_pixel_sharpness(image):
     if image.ndim == 3:
-        grey_image = cv.cvtColor(image, cv.COLOR_BGR2GRAY)
+        grey_image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     else:
         grey_image = image
         
@@ -25,7 +25,6 @@ def trivial_aif_initialization(defocus_stack):
     
     sharpness_stack = np.zeros(defocus_stack.shape[:3])
     for i in range(len(defocus_stack)):
-        # sharpness = section_search.compute_tv_map(defocus_stack[i])
         sharpness = compute_pixel_sharpness(defocus_stack[i])
         sharpness_stack[i] = sharpness
     
@@ -44,7 +43,7 @@ def trivial_aif_initialization(defocus_stack):
 def compute_defocus_term(image, sigma=1.0, sharpness_measure='laplacian'):
     assert sharpness_measure in ['laplacian', 'log', 'sobel_grad']
     if image.ndim == 3:
-        grey_image = cv.cvtColor(image, cv.COLOR_BGR2GRAY) / 255.
+        grey_image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY) / 255.
     else:
         grey_image = image / 255.
 
@@ -59,7 +58,7 @@ def compute_defocus_term(image, sigma=1.0, sharpness_measure='laplacian'):
         magnitude = np.abs(log_response)    
     elif sharpness_measure == 'laplacian':
         # absolute laplacian
-        laplacian = cv.Laplacian(grey_image, ddepth=cv.CV_32F, ksize=3)
+        laplacian = cv2.Laplacian(grey_image, ddepth=cv2.CV_32F, ksize=3)
         magnitude = np.abs(laplacian)
 
     # sum of hf coeffs

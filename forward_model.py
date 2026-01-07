@@ -1,21 +1,7 @@
-import os
-import math
-
 import numpy as np
 import scipy
-import matplotlib.pyplot as plt
 
-from PIL import Image
-import cv2
-
-import torch
-torch.cuda.empty_cache()
-import torch_sparse
-
-import utils
-# from globals import *
 import globals
-
 
 
 def compute_u_v():
@@ -105,22 +91,21 @@ def computer(dpt, Df):
     r = CoC / 2. / globals.ps
 
     # threshold
-    # r[np.where(r < 2)] = 2 # was used for nyuv2
     r[np.where(r < globals.thresh)] = globals.thresh
 
     
     return r
 
-def computeG_old(r, u, v):
-    # compute Gaussian kernels
-    G = np.exp(-(u**2 + v**2) / (2 * (r+1e-8)**2))        
-    # G = ((u**2 + v**2) <= r**2).astype(np.float32) # disc 
+# def computeG_old(r, u, v):
+#     # compute Gaussian kernels
+#     G = np.exp(-(u**2 + v**2) / (2 * (r+1e-8)**2))        
+#     # G = ((u**2 + v**2) <= r**2).astype(np.float32) # disc 
     
-    # normalize gaussian kernels
-    norm = np.sum(G, axis=(-2,-1), keepdims=True, dtype=np.float32)
-    G /= (norm+1e-8)
+#     # normalize gaussian kernels
+#     norm = np.sum(G, axis=(-2,-1), keepdims=True, dtype=np.float32)
+#     G /= (norm+1e-8)
 
-    return G, norm
+#     return G, norm
 
 def computeG(r, u, v, eps=1e-8):
     # exploit Gaussian separability for speed up
@@ -132,15 +117,8 @@ def computeG(r, u, v, eps=1e-8):
     Gu = np.exp(-u2 * inv2sigma2)
     Gv = np.exp(-v2 * inv2sigma2)
     
-    # # normalize 1D, so the 2D outer will already be normalized
-    # sum_u = Gu.sum(axis=-2, keepdims=True) + eps
-    # sum_v = Gv.sum(axis=-1, keepdims=True) + eps
-    # Gu /= sum_u
-    # Gv /= sum_v
-    
     # assemble full 2D kernel
     G = Gu * Gv 
-    # norm = np.ones_like(sum_u, dtype=np.float32)
 
     # normalize gaussian kernels
     norm = np.sum(G, axis=(-2,-1), keepdims=True, dtype=np.float32)
@@ -207,107 +185,6 @@ def buildA(dpt, u, v, row, col, mask, template_A_stack=None):
             A_stack.append(A)
             
     return A_stack
-
-# def forward_single_pixel(i, j, Z, aif):#, max_kernel_size = 7):
-
-#     width, height, _ = aif.shape
-#     fs = len(globals.Df)
-
-#     dpt = torch.tensor([[Z]])
-
-#     r = computer(dpt, globals.Df)
-#     r = r.unsqueeze(-1).unsqueeze(-1)
-
-#     u, v = compute_u_v()#max_kernel_size = max_kernel_size)
-#     # print(u, v)
-
-#     G, _ = computeG(r, u, v)
-#     # print(G)
-
-#     row = (i + u).flatten()
-#     col = (j + v).flatten()
-#     condition1 = row < 0
-#     condition2 = row >= width
-#     condition3 = col < 0
-#     condition4 = col >= height
-#     indices_to_delete = torch.where(condition1 | condition2 | condition3 | condition4)
-#     mask = torch.ones(col.size(0), dtype=torch.bool)
-#     mask[indices_to_delete] = False
-
-
-#     row = row[mask].to(int)
-#     col = col[mask].to(int)
-
-#     defocus_stack = torch.zeros((fs, 3)).to(aif.device)
-    
-#     for idx in range(fs):
-#         G_idx = G[:,:,idx,:,:].flatten()[mask]
-
-#         aif_red = aif[row, col, 0]
-#         aif_green = aif[row, col, 1]
-#         aif_blue = aif[row, col, 2]
-
-#         defocus_stack[idx, 0] = (G_idx * aif_red).sum()
-#         defocus_stack[idx, 1] = (G_idx * aif_green).sum()
-#         defocus_stack[idx, 2] = (G_idx * aif_blue).sum()
-
-#     # for idx in range(fs):
-#     #     data = G[:,:,idx,:,:]
-#     #     aif = 
-    
-#     # aif_red = aif[:,:,0].flatten().unsqueeze(1).to(dpt.device, dtype=dpt.dtype)
-#     # aif_green = aif[:,:,1].flatten().unsqueeze(1).to(dpt.device, dtype=dpt.dtype)
-#     # aif_blue = aif[:,:,2].flatten().unsqueeze(1).to(dpt.device, dtype=dpt.dtype)
-
-#     return defocus_stack
-
-    
-# def forward_torch(dpt, aif, indices=None, kernel='gaussian', op=None, template_A_stack=None):
-#     if indices is None:
-#         width, height = dpt.shape
-#         u, v, row, col, mask = precompute_indices(width, height)
-#     else:
-#         # print('here')
-#         u, v, row, col, mask = indices
-
-#     A_stack = buildA(dpt, u, v, row, col, mask, use_torch=True, kernel=kernel, op=op, template_A_stack=template_A_stack)
-#     width, height = dpt.shape
-
-#     defocus_stack = []
-
-#     # print('aif region')
-#     # lim = globals.MAX_KERNEL_SIZE //2
-#     # print('red')
-#     # print(aif[214-lim:214+lim+1,54-lim:54+lim+1,0])
-#     # print('green')
-#     # print(aif[214-lim:214+lim+1,54-lim:54+lim+1,1])
-#     # print('blue')
-#     # print(aif[214-lim:214+lim+1,54-lim:54+lim+1,2])
-
-
-#     aif_red = aif[:,:,0].flatten().unsqueeze(1).to(dpt.device, dtype=dpt.dtype)
-#     aif_green = aif[:,:,1].flatten().unsqueeze(1).to(dpt.device, dtype=dpt.dtype)
-#     aif_blue = aif[:,:,2].flatten().unsqueeze(1).to(dpt.device, dtype=dpt.dtype)
-
-#     # print('aif',aif[100,100])
-    
-#     for idx in range(len(A_stack)):
-#         A_indices, A_values = A_stack[idx]
-
-#         b_red = torch_sparse.spmm(A_indices, A_values, 
-#             width*height, width*height, aif_red)
-#         b_green = torch_sparse.spmm(A_indices, A_values, 
-#             width*height, width*height, aif_green)
-#         b_blue = torch_sparse.spmm(A_indices, A_values, 
-#             width*height, width*height, aif_blue)
-        
-#         b = torch.column_stack((b_red, b_green, b_blue))
-#         b = b.reshape((width,height,3))
-
-#         defocus_stack.append(b)
-
-#     return torch.stack(defocus_stack, dim=0)
-
 
 def forward(dpt, aif, indices=None, template_A_stack=None):
     width, height = dpt.shape

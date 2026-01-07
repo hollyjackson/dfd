@@ -1,19 +1,18 @@
-import os
+# import os
 import numpy as np
 import matplotlib.pyplot as plt
 import scipy
 import math
 
-import utils
+# import utils
 import forward_model
 import globals
-import least_squares
 
-from scipy.optimize import curve_fit
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from tqdm import tqdm
+# from scipy.optimize import curve_fit
+# from concurrent.futures import ThreadPoolExecutor, as_completed
+import tqdm
 
-import torch
+# import torch
 
 invphi = (math.sqrt(5) - 1) / 2  # 1 / phi
 
@@ -194,7 +193,7 @@ def grid_search_opt_k(gt_aif, defocus_stack, indices=None, min_Z = 0.1, max_Z = 
 
     all_losses = np.zeros((width, height, num_Z), dtype=np.float32)
     # for i in range(num_Z):
-    for i in tqdm(range(num_Z), desc="Grid search".ljust(20), ncols=80, disable=(not verbose)):
+    for i in tqdm.tqdm(range(num_Z), desc="Grid search".ljust(20), ncols=80, disable=(not verbose)):
         # print(i,'/',num_Z)
         r = forward_model.computer(np.array([[Z[i]]], dtype=np.float32), globals.Df)[...,None,None]
         # print(r)

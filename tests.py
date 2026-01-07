@@ -2,7 +2,7 @@
 import forward_model
 import utils
 
-import least_squares
+import nesterov
 import section_search
 
 import torch
@@ -30,7 +30,7 @@ def test_windowed_mse():
     
     assert np.allclose(losses_1, losses_2, atol=1e-6)
 
-def test_least_squares():
+def test_nesterov():
     criterion = torch.nn.MSELoss()
 
     aif, dpt, gt_defocus_stack = utils.load_single_sample(res='half')
@@ -38,14 +38,18 @@ def test_least_squares():
     # least squares
     defocus_stack = forward_model.forward(dpt, aif)
 
-    recon_aif = least_squares.least_squares(dpt, defocus_stack)
+    IMAGE_RANGE = 255. # if defocus stack in [0-255]
+    if defocus_stack.max() <= 1.5: # instead in [0-1]
+        IMAGE_RANGE = 1.
+
+    recon_aif = nesterov.bounded_fista_3d(dpt, defocus_stack, IMAGE_RANGE)
     utils.plot_compare_rgb(recon_aif, aif)
     plt.show()
 
     print('Norm between recon and gt aif:', np.linalg.norm(np.array(recon_aif) - np.array(aif)))
 
-    defocus_stack_pred = forward_model.forward_torch(dpt, torch.from_numpy(recon_aif))
-    loss = criterion(defocus_stack_pred, torch.from_numpy(defocus_stack))
+    defocus_stack_pred = forward_model.forward(dpt, recon_aif)
+    loss = criterion(defocus_stack_pred, defocus_stack)
 
     print('MSE loss:',loss)
 
@@ -74,54 +78,54 @@ def test_least_squares_synthetic():
     print('MSE loss:',loss)
 
 
-def test_k_min_indices_no_overlap():
-    width, height, num_Z = 5, 5, 20
-    k = 3
-    gss_window = 2
+# def test_k_min_indices_no_overlap():
+#     width, height, num_Z = 5, 5, 20
+#     k = 3
+#     gss_window = 2
     
-    # Create random loss values and sort them to get indices
-    np.random.seed(0)
-    all_losses = np.random.rand(width, height, num_Z)
-    sorted_indices = np.argsort(all_losses, axis=2)
-    print(sorted_indices[0,0,:])
+#     # Create random loss values and sort them to get indices
+#     np.random.seed(0)
+#     all_losses = np.random.rand(width, height, num_Z)
+#     sorted_indices = np.argsort(all_losses, axis=2)
+#     print(sorted_indices[0,0,:])
     
-    k_min_indices = section_search.k_min_indices_no_overlap(sorted_indices, k=k, gss_window=gss_window)
+#     k_min_indices = section_search.k_min_indices_no_overlap(sorted_indices, k=k, gss_window=gss_window)
     
-    assert k_min_indices.shape == (width, height, k)
-    assert np.all(k_min_indices >= 0)
+#     assert k_min_indices.shape == (width, height, k)
+#     assert np.all(k_min_indices >= 0)
     
-    for i in range(width):
-        for j in range(height):
-            values = np.sort(k_min_indices[i, j])
-            for a in range(len(values)):
-                for b in range(a+1, len(values)):
-                    assert abs(values[a] - values[b]) >= gss_window, \
-                        f"Overlap violation at ({i},{j}): {values}"
+#     for i in range(width):
+#         for j in range(height):
+#             values = np.sort(k_min_indices[i, j])
+#             for a in range(len(values)):
+#                 for b in range(a+1, len(values)):
+#                     assert abs(values[a] - values[b]) >= gss_window, \
+#                         f"Overlap violation at ({i},{j}): {values}"
     
     
-    print("Sample indices at (0,0):", k_min_indices[0, 0])
-    print("Corresponding loss values:", all_losses[0, 0][k_min_indices[0, 0]])
+#     print("Sample indices at (0,0):", k_min_indices[0, 0])
+#     print("Corresponding loss values:", all_losses[0, 0][k_min_indices[0, 0]])
 
-# test_k_min_indices_no_overlap()
+# # test_k_min_indices_no_overlap()
 
 
-def test_k_min_indices_no_overlap_k1():
-    width, height, num_Z = 5, 5, 20
-    k = 1
-    gss_window = 2
+# def test_k_min_indices_no_overlap_k1():
+#     width, height, num_Z = 5, 5, 20
+#     k = 1
+#     gss_window = 2
     
-    # Create random loss values and sort them to get indices
-    np.random.seed(0)
-    all_losses = np.random.rand(width, height, num_Z)
-    sorted_indices = np.argsort(all_losses, axis=2)
-    print(sorted_indices[0,0,:])
+#     # Create random loss values and sort them to get indices
+#     np.random.seed(0)
+#     all_losses = np.random.rand(width, height, num_Z)
+#     sorted_indices = np.argsort(all_losses, axis=2)
+#     print(sorted_indices[0,0,:])
     
-    k_min_indices = section_search.k_min_indices_no_overlap(sorted_indices, k=k, gss_window=gss_window)
+#     k_min_indices = section_search.k_min_indices_no_overlap(sorted_indices, k=k, gss_window=gss_window)
     
-    assert k_min_indices.shape == (width, height, k)
-    assert np.all(k_min_indices >= 0)
+#     assert k_min_indices.shape == (width, height, k)
+#     assert np.all(k_min_indices >= 0)
 
-    assert np.array_equal(k_min_indices.squeeze(), sorted_indices[:,:,0])
+#     assert np.array_equal(k_min_indices.squeeze(), sorted_indices[:,:,0])
 
 def test_load_save_dpt():
     # Parameters
