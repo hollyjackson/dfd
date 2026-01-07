@@ -93,16 +93,16 @@ def coordinate_descent_v2(defocus_stack,  experiment_folder='experiments', gss_t
         a_b_init = None
         t0 = time.time()
         
-        depth_maps, Z, k_min_indices, all_losses = section_search.grid_search_opt_k(aif, defocus_stack, k=1, indices=indices, min_Z=min_Z, max_Z=max_Z, num_Z=num_Z, last_dpt=last_dpt, gss_window=gss_window, verbose=verbose, windowed=windowed_mse, test=test)
+        depth_map, Z, min_indices, all_losses = section_search.grid_search_opt_k(aif, defocus_stack, indices=indices, min_Z=min_Z, max_Z=max_Z, num_Z=num_Z, last_dpt=last_dpt, gss_window=gss_window, verbose=verbose, windowed=windowed_mse)
         
-        k_min_indices = np.squeeze(k_min_indices)
-        depth_maps = np.squeeze(depth_maps)
+        # k_min_indices = np.squeeze(k_min_indices)
+        # depth_maps = np.squeeze(depth_maps)
         
         if verbose:
             print('GRID SEARCH DURATION', time.time()-t0)
         
         if save_plots or show_plots:
-            plt.imshow(depth_maps)
+            plt.imshow(depth_map)
             plt.colorbar()
             if save_plots:
                 plt.savefig(os.path.join(iter_folder,'grid_search_'+str(i)+'.png'))
@@ -114,7 +114,7 @@ def coordinate_descent_v2(defocus_stack,  experiment_folder='experiments', gss_t
         
         # GSS
         t0 = time.time()
-        depth_map_golden = section_search.golden_section_search(Z, k_min_indices, aif, defocus_stack, indices=indices, template_A_stack=template_A_stack, window=gss_window, tolerance=gss_tol, a_b_init=a_b_init, last_dpt=last_dpt, verbose=verbose, windowed=False)
+        depth_map_golden = section_search.golden_section_search(Z, min_indices, aif, defocus_stack, indices=indices, template_A_stack=template_A_stack, window=gss_window, tolerance=gss_tol, a_b_init=a_b_init, last_dpt=last_dpt, verbose=verbose, windowed=False)
         if verbose:
             print('GSS DURATION', time.time()-t0)
         
