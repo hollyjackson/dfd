@@ -20,6 +20,7 @@ torch.cuda.empty_cache()
 import torch_sparse
 
 import globals
+import utils
 
 def load_NYUv2_dpt(path_to_file, resize_frac=2):
     dpt = skimage.io.imread(path_to_file).astype(np.float32)

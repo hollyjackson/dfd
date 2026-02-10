@@ -19,9 +19,17 @@ def mse_loss(pred, gt):
     return np.mean((gt - pred)**2)
 
 
-def coordinate_descent(defocus_stack,  experiment_folder='experiments', gss_tol = 1e-2, gss_window = 1, T_0 = 100, alpha = None, num_epochs = 25, nesterov_first = True, save_plots = True, show_plots = False, depth_init = None, aif_init = None, experiment_name = 'coord-descent', vmin = 0.7, vmax = 1.9, remove_outliers = False, diff_thresh = 2, grid_window = 0.25, min_Z = 0.1, max_Z = 10, num_Z = 100, verbose=True, windowed_mse=False):
+def coordinate_descent(defocus_stack,  experiment_folder='experiments', gss_tol = 1e-2, gss_window = 1, T_0 = 100, alpha = None, num_epochs = 25, nesterov_first = True, save_plots = True, show_plots = False, depth_init = None, aif_init = None, experiment_name = 'coord-descent', vmin = None, vmax = None, remove_outliers = False, diff_thresh = 2, grid_window = 0.25, num_Z = 100, verbose=True, windowed_mse=False):
 
     # important initializations ---------------------
+
+    min_Z = globals.min_Z
+    max_Z = globals.max_Z
+    print('Depth range: [',min_Z,'-',max_Z,']')
+    if vmin is None:
+        vmin = min_Z
+    if vmax is None:
+        vmax = max_Z
     
     EXPERIMENT_NAME = experiment_name
     experiment_folder = utils.create_experiment_folder(EXPERIMENT_NAME, base_folder=experiment_folder)
