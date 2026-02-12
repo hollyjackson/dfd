@@ -1,18 +1,44 @@
-import numpy as np
-import matplotlib.pyplot as plt
-import scipy
+"""Objective functions and depth-search routines for depth-from-defocus.
+
+Provides two search strategies:
+
+Grid search
+    Evaluates the objective at a dense grid of depth values and returns
+    the per-pixel minimizer.  Intended as a coarse initialization.
+
+Golden-section search
+    Refines an initial depth estimate using bracketed golden-section search,
+    exploiting the objective's approximately unimodal structure per pixel.
+"""
 import math
+
+import numpy as np
+import scipy
+import tqdm
 
 import forward_model
 import globals
 
-import tqdm
-
 invphi = (math.sqrt(5) - 1) / 2  # 1 / phi
 
 
+# ---------------------------------------------------------------------------
+# Windowed-MSE helpers
+# ---------------------------------------------------------------------------
+
 def windowed_mse_gss(depth_map, gt_aif, defocus_stack, indices=None, template_A_stack=None):
-    # Not used in practice because too slow 
+    """Windowed MSE for arbitrary (non-constant) depth maps.
+
+    For each spatial offset (i, j) within a square window of side
+    globals.window_size, shifts the depth map by (i, j), runs the full
+    forward model on the shifted map, and accumulates the per-pixel MSE.
+    The final loss at each pixel is the average over all valid offsets,
+    smoothing the loss landscape across spatially-neighbouring depth values.
+
+    Requires one full forward-model pass per offset — O(window_size²) total.
+    Not used in practice; prefer windowed_mse_grid for the grid-search path,
+    where the forward pass is already precomputed.
+    """ 
     
     if globals.window_size % 2 == 0:
         globals.window_size += 1
@@ -38,10 +64,15 @@ def windowed_mse_gss(depth_map, gt_aif, defocus_stack, indices=None, template_A_
     return losses / denom
 
 def windowed_mse_grid(defocus_stack, pred):
+    """Windowed MSE for constant-depth (grid-search) evaluations.
+
+    Given a precomputed forward-model prediction, spatially averages the
+    per-pixel MSE within a square window of side globals.window_size,
+    smoothing the loss landscape across neighbouring pixels.
+    """
     if globals.window_size % 2 == 0:
         globals.window_size += 1
     rad = globals.window_size // 2
-    # rad = globals.MAX_KERNEL_SIZE // 2
     _, width, height, _ = defocus_stack.shape
     mse = np.mean((defocus_stack - pred)**2, axis=(0, -1))
     losses = np.zeros((width, height), dtype=np.float32)
@@ -58,34 +89,114 @@ def windowed_mse_grid(defocus_stack, pred):
             denom[i_start:i_end, j_start:j_end] += 1
     return losses / denom
 
-# def windowed_mse_grid_v2(defocus_stack, pred):
-#     # more efficient version, forgot to use in final version, TODO: put back in but double check its producing the same exact results 
-#     if globals.window_size % 2 == 0:
-#         globals.window_size += 1
-#     mse = np.mean((defocus_stack - pred)**2, axis=(0, -1))
-#     win_mean = scipy.ndimage.uniform_filter(mse, size=globals.window_size, mode='nearest')
-#     return win_mean
-    
-def objective_full(depth_map, gt_aif, defocus_stack, indices=None, template_A_stack=None, pred=None, last_dpt=None, windowed=False): 
+def windowed_mse_grid_fast(defocus_stack, pred):
+    """Windowed MSE using scipy uniform_filter (faster alternative to windowed_mse_grid).
 
-    grid_search = True if np.all(np.isclose(depth_map, depth_map[0][0])) else False
-    
+    Replaces the explicit accumulation loop with scipy.ndimage.uniform_filter,
+    which applies a box-filter average over globals.window_size pixels.
+    Intended to be equivalent to windowed_mse_grid but has not yet been
+    validated against it — use with caution.
+    """
+    # TODO: verify output matches windowed_mse_grid before using in production 
+    if globals.window_size % 2 == 0:
+        globals.window_size += 1
+    mse = np.mean((defocus_stack - pred)**2, axis=(0, -1))
+    win_mean = scipy.ndimage.uniform_filter(mse, size=globals.window_size, mode='nearest')
+    return win_mean
+
+# ---------------------------------------------------------------------------
+# Objective function
+# ---------------------------------------------------------------------------
+
+def objective_full(dpt, aif, defocus_stack, indices=None, template_A_stack=None, pred=None, windowed=False):
+    """Per-pixel reconstruction loss between the observed and predicted focal stacks.
+
+    Runs the forward model for the given depth map and computes the mean
+    squared error against defocus_stack.  When windowed=True, replaces plain
+    MSE with a spatially-averaged windowed loss.
+
+    If dpt is constant (all pixels share the same depth value), the cheaper
+    windowed_mse_grid path is taken; otherwise windowed_mse_gss is used,
+    which re-runs the forward model for each spatial offset.
+
+    Parameters
+    ----------
+    dpt : ndarray, shape (W, H)
+        Candidate depth map in metres.
+    aif : ndarray, shape (W, H, C)
+        All-in-focus reference image.
+    defocus_stack : ndarray, shape (fs, W, H, C)
+        Observed focal stack.
+    indices : tuple, optional
+        Precomputed (u, v, row, col, mask) from forward_model.precompute_indices.
+    template_A_stack : tuple, optional
+        Precomputed CSR template from forward_model.build_fixed_pattern_csr.
+    pred : ndarray, shape (fs, W, H, C), optional
+        If provided, skips the forward-model call and uses this prediction directly.
+    windowed : bool
+        If True, apply spatial windowing to the MSE.
+
+    Returns
+    -------
+    ndarray, shape (W, H)
+        Per-pixel reconstruction loss.
+    """
+    grid_search = np.all(np.isclose(dpt, dpt[0][0]))
+
     if windowed:
         if grid_search:
             if pred is None:
-                pred = forward_model.forward(depth_map, gt_aif, indices=indices, template_A_stack=template_A_stack)
+                pred = forward_model.forward(dpt, aif, indices=indices, template_A_stack=template_A_stack)
             loss = windowed_mse_grid(defocus_stack, pred)
         else:
-            print('here')
-            loss = windowed_mse_gss(depth_map, gt_aif, defocus_stack, indices=indices, template_A_stack=template_A_stack)
+            loss = windowed_mse_gss(dpt, aif, defocus_stack, indices=indices, template_A_stack=template_A_stack)
     else:
         if pred is None:
-            pred = forward_model.forward(depth_map, gt_aif, indices=indices, template_A_stack=template_A_stack)
+            pred = forward_model.forward(dpt, aif, indices=indices, template_A_stack=template_A_stack)
         loss = np.mean((defocus_stack - pred)**2, axis=(0, -1))
     return loss
 
-def grid_search(gt_aif, defocus_stack, indices=None, min_Z = 0.1, max_Z = 10, num_Z = 100, last_dpt=None, gss_window=1, verbose=True, windowed=False):
-    # try many values of Z
+
+# ---------------------------------------------------------------------------
+# Depth search
+# ---------------------------------------------------------------------------
+
+def grid_search(gt_aif, defocus_stack, indices=None, min_Z=0.1, max_Z=10, num_Z=100, verbose=True, windowed=False):
+    """Coarse per-pixel depth search over a uniform depth grid.
+
+    Evaluates the reconstruction objective at num_Z candidate depths
+    linearly spaced in [min_Z, max_Z] and returns the per-pixel depth with
+    minimum loss, along with the full loss surface for downstream refinement
+    (e.g. golden_section_search).
+
+    Parameters
+    ----------
+    gt_aif : ndarray, shape (W, H, C)
+        All-in-focus reference image.
+    defocus_stack : ndarray, shape (fs, W, H, C)
+        Observed focal stack.
+    indices : tuple, optional
+        Precomputed (u, v, row, col, mask) from forward_model.precompute_indices.
+    min_Z, max_Z : float
+        Depth range to search (same units as globals.Df).
+    num_Z : int
+        Number of candidate depths.
+    verbose : bool
+        Show a tqdm progress bar.
+    windowed : bool
+        Use spatially-windowed MSE instead of plain MSE.
+
+    Returns
+    -------
+    depth_maps : ndarray, shape (W, H)
+        Per-pixel depth at the grid minimum.
+    Z : ndarray, shape (num_Z,)
+        The candidate depth values.
+    min_indices : ndarray, shape (W, H), int
+        Index into Z of the per-pixel minimum.
+    all_losses : ndarray, shape (W, H, num_Z)
+        Full per-pixel loss surface over the depth grid.
+    """
     Z = np.linspace(min_Z, max_Z, num_Z, dtype=np.float32)
 
     width, height, num_channels = gt_aif.shape
@@ -95,42 +206,79 @@ def grid_search(gt_aif, defocus_stack, indices=None, min_Z = 0.1, max_Z = 10, nu
         u, v, _, _, _ = indices
 
     all_losses = np.zeros((width, height, num_Z), dtype=np.float32)
-    # for i in range(num_Z):
     for i in tqdm.tqdm(range(num_Z), desc="Grid search".ljust(20), ncols=80, disable=(not verbose)):
-        # print(i,'/',num_Z)
         r = forward_model.computer(np.array([[Z[i]]], dtype=np.float32), globals.Df)[...,None,None]
-        # print(r)
-        # print(r.shape, u.shape, v.shape)
         G, _ = forward_model.computeG(r, u, v)
-        # print(G.shape)
-        # print(G)
-        G = G.squeeze()    
+        G = G.squeeze()
         defocus_stack_pred = np.zeros((G.shape[0], width, height, num_channels), dtype=np.float32)
         for j in range(G.shape[0]): # each focal setting
             kernel = G[j]
             for c in range(num_channels):
                 defocus_stack_pred[j,:,:,c] = scipy.ndimage.convolve(gt_aif[:,:,c], kernel, mode='constant')
-        
-        dpt = np.ones((width,height), dtype=np.float32) * Z[i]
-        all_losses[:,:,i] = objective_full(dpt, gt_aif, defocus_stack, indices=indices, pred=defocus_stack_pred, last_dpt=last_dpt, windowed=windowed)
-        # all_losses[:,:,i] = objective_full(dpt, gt_aif, defocus_stack, indices=indices, pred=defocus_stack_pred, beta=beta, proxy=proxy, gamma=gamma, similarity_penalty=similarity_penalty, last_dpt=last_dpt, windowed=True)
+
+        dpt = np.ones((width, height), dtype=np.float32) * Z[i]
+        all_losses[:,:,i] = objective_full(dpt, gt_aif, defocus_stack, indices=indices, pred=defocus_stack_pred, windowed=windowed)
 
     sorted_indices = np.argsort(all_losses, axis=2)
-
-    # three diff methods
-    min_indices = sorted_indices[:,:,0] # axis = 2
-    # k_min_indices = k_min_indices_no_overlap(sorted_indices, k, gss_window=gss_window)
-    # k_min_indices = np.expand_dims(new_local_min_heuristic(all_losses), axis=-1)
-    
+    min_indices = sorted_indices[:,:,0]
     depth_maps = Z[min_indices]
-    # print(k_min_indices.shape, depth_maps.shape)
-    
-    return depth_maps, Z, min_indices, all_losses
 
+    return depth_maps, Z, min_indices, all_losses
 
 
 def golden_section_search(Z, argmin_indices, gt_aif, defocus_stack, indices=None, template_A_stack=None,
     window=1, tolerance=1e-5, convergence_error=0, max_iter=100, last_dpt=None, a_b_init=None, verbose=True, windowed=False):
+    """Per-pixel depth refinement via bracketed golden-section search.
+
+    Starting from a bracket [a, b] centred on the grid-search minimum
+    (argmin_indices ± window steps in Z), narrows each pixel's bracket using
+    the golden-section rule until the interval width falls below tolerance or
+    max_iter iterations are reached.
+
+    Supports partial convergence: convergence_error is the fraction of pixels
+    allowed to remain unconverged (e.g. 0.01 → 99 % of pixels must converge).
+
+    If last_dpt is provided, the returned depth map takes the per-pixel minimum
+    of the GSS result and last_dpt, keeping whichever achieves lower loss.
+
+    Parameters
+    ----------
+    Z : ndarray, shape (num_Z,)
+        Depth grid from grid_search.
+    argmin_indices : ndarray, shape (W, H), int
+        Per-pixel index of the grid minimum, used to initialise the bracket.
+    gt_aif : ndarray, shape (W, H, C)
+        All-in-focus reference image.
+    defocus_stack : ndarray, shape (fs, W, H, C)
+        Observed focal stack.
+    indices : tuple, optional
+        Precomputed (u, v, row, col, mask) from forward_model.precompute_indices.
+    template_A_stack : tuple, optional
+        Precomputed CSR template from forward_model.build_fixed_pattern_csr.
+    window : int
+        Half-width (in grid steps) of the initial search bracket.
+    tolerance : float
+        Stop when |b - a| < tolerance for all (or convergence_error fraction) pixels.
+    convergence_error : float in [0, 1)
+        Fraction of pixels allowed to remain unconverged.  0 requires all pixels
+        to converge.
+    max_iter : int
+        Maximum number of GSS iterations.
+    last_dpt : ndarray, shape (W, H), optional
+        Previous depth estimate.  If provided, the output takes the per-pixel
+        minimum of the GSS result and last_dpt by objective value.
+    a_b_init : tuple of (ndarray, ndarray), optional
+        Explicit (a, b) bracket arrays, overriding the grid-based initialisation.
+    verbose : bool
+        Print progress and convergence messages.
+    windowed : bool
+        Use spatially-windowed MSE instead of plain MSE.
+
+    Returns
+    -------
+    ndarray, shape (W, H)
+        Refined per-pixel depth map.
+    """
     assert convergence_error >= 0 and convergence_error < 1
     if verbose:
         print("\nGolden-section search...")
@@ -150,29 +298,14 @@ def golden_section_search(Z, argmin_indices, gt_aif, defocus_stack, indices=None
     c = b - (b - a) * invphi
     d = a + (b - a) * invphi
     
-    f_c = objective_full(c, gt_aif, defocus_stack, indices=indices, template_A_stack=template_A_stack, last_dpt=last_dpt, windowed=windowed)
-    f_d = objective_full(d, gt_aif, defocus_stack, indices=indices, template_A_stack=template_A_stack, last_dpt=last_dpt, windowed=windowed)
+    f_c = objective_full(c, gt_aif, defocus_stack, indices=indices, template_A_stack=template_A_stack, windowed=windowed)
+    f_d = objective_full(d, gt_aif, defocus_stack, indices=indices, template_A_stack=template_A_stack, windowed=windowed)
    
 
     i = 0
     while (((convergence_error == 0 and np.any(b - a > tolerance))
             or (convergence_error != 0 and np.sum((b - a) > tolerance) / a.size > (1 - convergence_error)))
-            and (i < max_iter)): # 99% convergence
-        # print(i)
-        # # update converged values
-        # mask = np.abs(b - a) < tolerance
-        # avg = (b + a) / 2
-        # a[mask] = avg[mask]
-        # b[mask] = avg[mask]
-
-        # # gss code from wiki
-        # c = b - (b - a) * invphi
-        # d = a + (b - a) * invphi
-        
-        # f_c = objective_full(c, gt_aif, defocus_stack, indices=indices, template_A_stack=template_A_stack, beta=beta, proxy=proxy, gamma=gamma, similarity_penalty=similarity_penalty, last_dpt=last_dpt)
-        # f_d = objective_full(d, gt_aif, defocus_stack, indices=indices, template_A_stack=template_A_stack, beta=beta, proxy=proxy, gamma=gamma, similarity_penalty=similarity_penalty, last_dpt=last_dpt)
-        # dtype_report("f", f_c=f_c, f_d=f_d)
-        
+            and (i < max_iter)):
         # tie-safe implementation
         active = (b - a) > tolerance
         go_left = (f_c <= f_d) & active
@@ -191,20 +324,10 @@ def golden_section_search(Z, argmin_indices, gt_aif, defocus_stack, indices=None
             d[go_right] = a[go_right] + (b[go_right] - a[go_right]) * invphi
 
         if np.any(go_left):
-            f_c = objective_full(c, gt_aif, defocus_stack, indices=indices, template_A_stack=template_A_stack, last_dpt=last_dpt, windowed=windowed)
+            f_c = objective_full(c, gt_aif, defocus_stack, indices=indices, template_A_stack=template_A_stack, windowed=windowed)
 
         if np.any(go_right):
-            f_d = objective_full(d, gt_aif, defocus_stack, indices=indices, template_A_stack=template_A_stack, last_dpt=last_dpt, windowed=windowed)
-    
-        
-        # b[go_left] = d[go_left]
-        # a[go_right] = c[go_right]
-            
-        # mask = f_c < f_d
-        # b[mask] = d[mask]
-
-        # mask = f_c > f_d
-        # a[mask] = c[mask]
+            f_d = objective_full(d, gt_aif, defocus_stack, indices=indices, template_A_stack=template_A_stack, windowed=windowed)
 
         i += 1
 
@@ -218,11 +341,8 @@ def golden_section_search(Z, argmin_indices, gt_aif, defocus_stack, indices=None
     dpt = (b + a) / 2
 
     if last_dpt is not None:
-        mse = objective_full(dpt, gt_aif, defocus_stack, indices=indices, template_A_stack=template_A_stack, last_dpt=None, windowed=windowed)
-        last_mse = objective_full(last_dpt, gt_aif, defocus_stack, indices=indices, template_A_stack=template_A_stack, last_dpt=None, windowed=windowed)
+        mse = objective_full(dpt, gt_aif, defocus_stack, indices=indices, template_A_stack=template_A_stack, windowed=windowed)
+        last_mse = objective_full(last_dpt, gt_aif, defocus_stack, indices=indices, template_A_stack=template_A_stack, windowed=windowed)
         dpt = np.where(mse <= last_mse, dpt, last_dpt)
 
     return dpt
-    
-
-

@@ -3,9 +3,8 @@ results/
 experiments/
 __pycache__/
 .ipynb_checkpoints/
-NYUv2/
-DefocusNet/
-MobileDepth/
+data/
 pyGCO
 *.csv
 *.sh
+dfd-sparse/

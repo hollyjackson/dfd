@@ -1,25 +1,87 @@
-import os
-import numpy as np
-import matplotlib.pyplot as plt
+"""Alternating-minimization solver for the joint depth-from-defocus problem.
 
-import utils
-import forward_model
-import globals
-import nesterov
-import section_search
-import torch
-import initialization
-import outlier_removal
+Alternates between two sub-problems until num_epochs iterations are reached:
 
-import cv2 as cv
+  AIF step   — given dpt, solve for aif via bounded FISTA
+               (Nesterov's accelerated gradient method).
+  Depth step — given aif, solve for dpt via a coarse grid search
+               followed by golden-section refinement.
+"""
 import math
+import os
 import time
 
+import matplotlib.pyplot as plt
+import numpy as np
+
+import forward_model
+import globals
+import initialization
+import nesterov
+import outlier_removal
+import section_search
+import utils
+
 def mse_loss(pred, gt):
+    """Mean squared error between pred and gt."""
     return np.mean((gt - pred)**2)
 
 
-def coordinate_descent(defocus_stack,  experiment_folder='experiments', gss_tol = 1e-2, gss_window = 1, T_0 = 100, alpha = None, num_epochs = 25, nesterov_first = True, save_plots = True, show_plots = False, depth_init = None, aif_init = None, experiment_name = 'coord-descent', vmin = None, vmax = None, remove_outliers = False, diff_thresh = 2, grid_window = 0.25, num_Z = 100, verbose=True, windowed_mse=False):
+def coordinate_descent(defocus_stack, experiment_folder='experiments', gss_tol=1e-2, gss_window=1, T_0=100, alpha=None, num_epochs=25, nesterov_first=True, save_plots=True, show_plots=False, depth_init=None, aif_init=None, experiment_name='coord-descent', vmin=None, vmax=None, remove_outliers=False, diff_thresh=2, num_Z=100, verbose=True, windowed_mse=False):
+    """Run alternating minimization on depth and AIF.
+
+    Parameters
+    ----------
+    defocus_stack : ndarray, shape (fs, W, H, C)
+        Observed focal stack.
+    experiment_folder : str
+        Root directory for saving outputs.
+    gss_tol : float
+        Convergence tolerance for golden-section search.
+    gss_window : int
+        Half-width (in grid steps) of the GSS initial bracket.
+    T_0 : int
+        Initial FISTA iteration budget.
+    alpha : float or None
+        If set, multiply T_i by alpha each epoch (decay schedule).
+    num_epochs : int
+        Number of alternating-minimization iterations.
+    nesterov_first : bool
+        If True, run the AIF step before the depth step each iteration.
+    save_plots : bool
+        Save intermediate images and loss curves to disk.
+    show_plots : bool
+        Display intermediate images interactively.
+    depth_init : ndarray, shape (W, H), scalar, or None
+        Initial depth map.  None → all-ones; scalar → constant map.
+    aif_init : ndarray, shape (W, H, C) or None
+        Initial AIF.  Only used when nesterov_first=False.
+    experiment_name : str
+        Subdirectory name for this run's outputs.
+    vmin, vmax : float or None
+        Depth colormap range for saved plots.
+    remove_outliers : bool
+        Apply outlier removal to the final depth map.
+    diff_thresh : float
+        Threshold parameter for outlier removal.
+    num_Z : int
+        Number of depth candidates for the coarse grid search.
+    verbose : bool
+        Print progress messages.
+    windowed_mse : bool
+        Use spatially-windowed MSE in the grid search.
+
+    Returns
+    -------
+    dpt : ndarray, shape (W, H)
+        Final estimated depth map.
+    aif : ndarray, shape (W, H, C)
+        Final estimated all-in-focus image.
+    T_i : int
+        Final FISTA iteration budget (after any decay).
+    experiment_folder : str
+        Path to the experiment output directory.
+    """
 
     # important initializations ---------------------
 
@@ -83,22 +145,17 @@ def coordinate_descent(defocus_stack,  experiment_folder='experiments', gss_tol 
 
         return aif, dpt
 
-    def generate_DPT(aif, dpt, beta=None, iter_folder=None, last_dpt=None):
+    def generate_DPT(aif, dpt, iter_folder=None, last_dpt=None):
         # ---------------------------
         # grid + backtracking search
         # ---------------------------
-        
-        a_b_init = None
         t0 = time.time()
-        
-        depth_map, Z, min_indices, all_losses = section_search.grid_search(aif, defocus_stack, indices=indices, min_Z=min_Z, max_Z=max_Z, num_Z=num_Z, last_dpt=last_dpt, gss_window=gss_window, verbose=verbose, windowed=windowed_mse)
-        
-        # k_min_indices = np.squeeze(k_min_indices)
-        # depth_maps = np.squeeze(depth_maps)
-        
+
+        depth_map, Z, min_indices, all_losses = section_search.grid_search(aif, defocus_stack, indices=indices, min_Z=min_Z, max_Z=max_Z, num_Z=num_Z, verbose=verbose, windowed=windowed_mse)
+
         if verbose:
             print('GRID SEARCH DURATION', time.time()-t0)
-        
+
         if save_plots or show_plots:
             plt.imshow(depth_map)
             plt.colorbar()
@@ -109,10 +166,9 @@ def coordinate_descent(defocus_stack,  experiment_folder='experiments', gss_tol 
             else:
                 plt.close()
 
-        
         # GSS
         t0 = time.time()
-        depth_map_golden = section_search.golden_section_search(Z, min_indices, aif, defocus_stack, indices=indices, template_A_stack=template_A_stack, window=gss_window, tolerance=gss_tol, a_b_init=a_b_init, last_dpt=last_dpt, verbose=verbose, windowed=False)
+        depth_map_golden = section_search.golden_section_search(Z, min_indices, aif, defocus_stack, indices=indices, template_A_stack=template_A_stack, window=gss_window, tolerance=gss_tol, last_dpt=last_dpt, verbose=verbose, windowed=False)
         if verbose:
             print('GSS DURATION', time.time()-t0)
         
@@ -146,10 +202,8 @@ def coordinate_descent(defocus_stack,  experiment_folder='experiments', gss_tol 
     # -------------------------------------------------------------------------------------
     # Initialization
     if depth_init is None:
-        # dpt = torch.full((width,height), 1).to(device, dtype=torch.float32)
         dpt = np.ones((width, height), dtype=np.float32)
     elif np.isscalar(depth_init):
-        # dpt = torch.full((width,height), depth_init).to(device, dtype=torch.float32)
         dpt = np.ones((width, height), dtype=np.float32) * depth_init
     else:
         dpt = np.array(depth_init, dtype=np.float32)
@@ -157,7 +211,6 @@ def coordinate_descent(defocus_stack,  experiment_folder='experiments', gss_tol 
     if not nesterov_first and aif_init is None:
         if verbose:
             print('initializing aif')
-        #aif = np.median(defocus_stack, axis=0) # aif as median filter of stack
         aif = initialization.compute_aif_initialization(defocus_stack, lmbda=0.05, sharpness_measure='sobel_grad')
     else:
         aif = aif_init
@@ -177,11 +230,7 @@ def coordinate_descent(defocus_stack,  experiment_folder='experiments', gss_tol 
 
     
     last_dpt = None
-    # if similarity_penalty and nesterov_first:
-    #     # last_dpt = torch.clone(dpt.detach())
-    #     last_dpt = np.copy(dpt)
 
-    # coordinate descent
     last_loss = float('inf')
     for i in range(num_epochs):
         
