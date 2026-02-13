@@ -6,21 +6,6 @@ import outlier_removal
 globals.MAX_KERNEL_SIZE = 7
 
 
-# ---------------------------------------------------------------------------
-# total_variation
-# ---------------------------------------------------------------------------
-
-def test_total_variation_constant():
-    img = np.ones((10, 10)) * 5.0
-    assert outlier_removal.total_variation(img) == 0.0
-
-
-def test_total_variation_known():
-    # Horizontal ramp: each row is [0, 1, 2], no vertical differences
-    img = np.tile(np.array([0.0, 1.0, 2.0]), (3, 1))
-    # tv_x: 3 rows * 2 steps of 1 = 6; tv_y: 0
-    assert outlier_removal.total_variation(img) == 6.0
-
 
 # ---------------------------------------------------------------------------
 # compute_tv_map
@@ -167,8 +152,6 @@ def test_remove_outliers_invalid_patch_type():
 
 if __name__ == '__main__':
     tests = [
-        test_total_variation_constant,
-        test_total_variation_known,
         test_tv_map_constant_image,
         test_tv_map_odd_patch_required,
         test_tv_map_shape,

@@ -6,6 +6,7 @@ import forward_model
 import section_search
 
 globals.init_NYUv2()
+globals.MAX_KERNEL_SIZE = 7
 
 
 # ---------------------------------------------------------------------------

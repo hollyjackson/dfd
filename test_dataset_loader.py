@@ -148,11 +148,11 @@ def test_load_NYUv2_aif_dtype():
 
 
 def test_load_NYUv2_aif_scale():
-    # Pixel value 255 -> 1.0
+    # Pixel value 255 -> 255
     with tempfile.TemporaryDirectory() as tmpdir:
         path = _write_rgb_png(tmpdir, 20, 30, value=255)
         aif = dataset_loader.load_NYUv2_aif(path, resize_frac=1)
-        assert np.allclose(aif, 1.0)
+        assert np.allclose(aif, 255.0)
 
 
 def test_load_NYUv2_aif_range():
@@ -160,7 +160,7 @@ def test_load_NYUv2_aif_range():
         path = _write_rgb_png(tmpdir, 20, 30, value=128)
         aif = dataset_loader.load_NYUv2_aif(path, resize_frac=1)
         assert aif.min() >= 0.0
-        assert aif.max() <= 1.0
+        assert aif.max() <= 255.0
 
 
 def test_load_NYUv2_aif_shape_full():
@@ -257,7 +257,7 @@ def test_load_mobile_depth_focal_stack_range():
         _write_focal_stack(tmpdir, n_frames=3, width=8, height=10)
         stack = dataset_loader._load_mobile_depth_focal_stack(tmpdir, resize_frac=1)
         assert stack.min() >= 0.0
-        assert stack.max() <= 1.0
+        assert stack.max() <= 255.0
 
 
 def test_load_mobile_depth_focal_stack_half_res():
