@@ -64,7 +64,7 @@ def find_high_tv_patches(dpt, tv_thresh=0.15, patch_size=None):
     dpt : ndarray, shape (H, W)
         Depth map to analyse.
     tv_thresh : float
-        Normalised TV threshold above which a pixel is flagged.
+        Normalized TV threshold above which a pixel is flagged.
     patch_size : int or None
         Passed through to :func:`compute_tv_map`.
 
@@ -73,7 +73,7 @@ def find_high_tv_patches(dpt, tv_thresh=0.15, patch_size=None):
     problem_pixels : ndarray, shape (N, 2)
         (row, col) indices of flagged pixels.
     tv_map : ndarray, shape (H, W)
-        Full TV map (useful for visualisation / threshold tuning).
+        Full TV map (useful for visualization / threshold tuning).
     """
     tv_map = compute_tv_map(dpt, patch_size=patch_size)
     problem_pixels = np.argwhere(tv_map > tv_thresh)
@@ -130,7 +130,7 @@ def find_constant_patches(aif, diff_thresh=2, patch_size=None):
 # Main entry point
 # ---------------------------------------------------------------------------
 
-def remove_outliers(depth_map, gt_aif, patch_type='tv', diff_thresh=2, tv_thresh=0.15, to_plot=True):
+def remove_outliers(dpt, aif, patch_type='tv', diff_thresh=2, tv_thresh=0.15, to_plot=True):
     """Detect and replace outlier pixels in *depth_map*.
 
     Outliers are identified by one of two strategies (see module docstring) and
@@ -139,9 +139,9 @@ def remove_outliers(depth_map, gt_aif, patch_type='tv', diff_thresh=2, tv_thresh
 
     Parameters
     ----------
-    depth_map : ndarray, shape (H, W) or (H, W, C)
-        Depth map to clean.  Modified in-place.
-    gt_aif : ndarray, shape (H, W, 3)
+    dpt : ndarray, shape (W, H)
+        Depth map to clean and used by the ``'tv'`` strategy.
+    aif : ndarray, shape (W, H, 3)
         All-in-focus image used by the ``'constant'`` strategy and for plotting.
     patch_type : {'tv', 'constant'}
         Which detection strategy to use.
@@ -155,15 +155,18 @@ def remove_outliers(depth_map, gt_aif, patch_type='tv', diff_thresh=2, tv_thresh
     Returns
     -------
     depth_map : ndarray
-        Cleaned depth map (same array, modified in-place).
+        Cleaned depth map.
     outlier_fraction : float
         Fraction of pixels flagged as outliers (for logging / diagnostics).
     """
     assert patch_type in ['tv', 'constant']
     print("Removing outliers...")
 
+    depth_map = dpt.copy()
+    width, height = depth_map.shape[:2]
+
     if patch_type == 'constant':
-        problem_pixels = find_constant_patches(gt_aif, diff_thresh=diff_thresh)
+        problem_pixels = find_constant_patches(aif, diff_thresh=diff_thresh)
     else:
         problem_pixels, tv_map = find_high_tv_patches(depth_map, tv_thresh=tv_thresh)
 
@@ -172,7 +175,7 @@ def remove_outliers(depth_map, gt_aif, patch_type='tv', diff_thresh=2, tv_thresh
 
     if to_plot:
         if patch_type == 'constant':
-            plt.imshow(gt_aif / 255.)
+            plt.imshow(aif / 255.)
         else:
             plt.imshow(tv_map)
             plt.colorbar()
@@ -188,9 +191,9 @@ def remove_outliers(depth_map, gt_aif, patch_type='tv', diff_thresh=2, tv_thresh
         patch = []
         for dx in range(-neighborhood_rad, neighborhood_rad + 1):
             for dy in range(-neighborhood_rad, neighborhood_rad + 1):
-                if i + dx < 0 or i + dx >= gt_aif.shape[0]:
+                if i + dx < 0 or i + dx >= width:
                     continue
-                if j + dy < 0 or j + dy >= gt_aif.shape[1]:
+                if j + dy < 0 or j + dy >= height:
                     continue
                 if (i + dx, j + dy) in problem_pixel_set:
                     continue
