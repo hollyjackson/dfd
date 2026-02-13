@@ -19,31 +19,10 @@ def init_NYUv2():
     D = f / 8
     Df = np.array([1, 1.5, 2.5, 4, 6], dtype=np.float32)  # m
     ps = 1.2e-5 # m (3.1e-3 / 240) -- sensor_width (m) / image width (pixels)
-    MAX_KERNEL_SIZE = 7
 
     min_Z = 0.1
     max_Z = 10. # m
     thresh = 2
-
-def init_DefocusNet():
-    global f
-    global D
-    global Df
-    global ps
-    global MAX_KERNEL_SIZE
-    global thresh
-    global min_Z
-    global max_Z
-
-    Df = np.array([0.1, 0.15, 0.3, 0.7, 1.5], dtype=np.float32) # m
-    f = 2.9 * 1e-3 # 2.9 mm --> m  
-    D = f / 1. # f-number = 1.
-    ps = 1.2e-5 # 36e-3 / 256.
-    MAX_KERNEL_SIZE = 7
-
-    min_Z = 0.1
-    max_Z = 3 # m
-    thresh = 0.5
 
 def init_MobileDepth():
     global f
@@ -55,8 +34,11 @@ def init_MobileDepth():
     global min_Z
     global max_Z
 
-    MAX_KERNEL_SIZE = 7
-    ps = 1 # all things are unitless / already in "pixels" from calib data
+    thresh = 0.1
+    ps = 0.75 * 2
+
+    min_Z = 1
+    max_Z = 800
 
 def init_Make3D():
     global f
@@ -73,4 +55,6 @@ def init_Make3D():
     
     Df = np.array([1, 2, 4, 8, 16, 32, 64], dtype=np.float32)
     print('Df:',Df)
+
+    thresh = 0.5
 

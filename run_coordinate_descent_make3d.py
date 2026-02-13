@@ -1,146 +1,148 @@
+"""
+Make3D Dataset Processing Pipeline
+
+This script runs the coordinate descent depth-from-defocus algorithm on images
+from the Make3D dataset. It performs the following steps:
+1. Load ground truth AIF and depth from Make3D dataset
+2. Generate defocus stack using forward model
+3. Initialize AIF image using MRF optimization
+4. Run coordinate descent to jointly optimize depth map and AIF image
+5. Compute and save accuracy metrics
+
+Usage:
+    python run_coordinate_descent_make3d.py <split> <img_name>
+
+    split: 'train' or 'test'
+    img_name: Image filename (e.g., 'img-math7-p-282t0.jpg')
+"""
+
 import os
 import sys
 import numpy as np
-import matplotlib.pyplot as plt
-import skimage
 
 import utils
 import forward_model
 import globals
-#import gradient_descent
-import least_squares
-import section_search
 import coordinate_descent
 import initialization
+import dataset_loader
+from config import MAKE3D
 
-#import torch
 
-# globals
-IMAGE_RANGE = 255.
-#FORWARD_KERNEL_TYPE = 'gaussian'
-EXPERIMENT_NAME = 'make3d-'
-windowed_MSE = True
-globals.window_size = 5
-globals.thresh = 0.5
-if windowed_MSE:
-    EXPERIMENT_NAME += "windowed"+str(globals.window_size)+"-"
-EXPERIMENT_NAME += "thresh"+str(globals.thresh)+"-"
+# =============================================================================
+# Data Loading and Preprocessing
+# =============================================================================
 
-def load_image(img_name = "img-math7-p-282t0.jpg"):
+def load_and_generate_defocus_stack(img_name, split, config):
+    """
+    Load Make3D ground truth and generate synthetic defocus stack.
 
+    Args:
+        img_name: Image filename (e.g., 'img-math7-p-282t0.jpg')
+        split: Dataset split ('train' or 'test')
+        config: Configuration object containing dataset parameters
+
+    Returns:
+        Tuple of (defocus_stack, gt_aif, gt_dpt) where:
+            - defocus_stack: Synthetic defocus stack
+            - gt_aif: Ground truth all-in-focus image
+            - gt_dpt: Ground truth depth map
+    """
+    # Initialize dataset-specific globals
     globals.init_Make3D()
+    globals.window_size = config.window_size
 
-    global EXPERIMENT_NAME
-    EXPERIMENT_NAME += img_name.split("img-")[1].split(".jpg")[0]
-
-    IIMAGE_RANGE = 255.
-    gt_aif, gt_dpt = utils.load_single_sample_Make3D(img_name = img_name, data_dir = "/data/holly_jackson/", split='test')
-    gt_aif = gt_aif * IMAGE_RANGE
-    
-    
-    gt_dpt_resized = skimage.transform.resize(
-        gt_dpt,
-        output_shape=(460, 345), # (height, width)
-        order=1,                  # bilinear interpolation
-        anti_aliasing=True,
-        preserve_range=True       # keep values in [0, 255] if original was uint8
+    # Load ground truth AIF and depth
+    gt_aif, gt_dpt = dataset_loader.load_single_sample_Make3D(
+        img_name=img_name, split=split, data_dir=config.data_dir
     )
-    
-    plt.imshow(gt_dpt_resized)
-    plt.colorbar()
-    plt.show()
-    
+
+    # Set adaptive kernel size based on image dimensions
     width, height, _ = gt_aif.shape
     max_kernel_size = utils.kernel_size_heuristic(width, height)
-    print('adaptive kernel size set to',max_kernel_size)
+    print(f'Adaptive kernel size set to {max_kernel_size}')
     utils.update_max_kernel_size(max_kernel_size)
 
-    defocus_stack = forward_model.forward(gt_dpt_resized, gt_aif)
-    
-    return defocus_stack, gt_aif, gt_dpt_resized
+    # Generate synthetic defocus stack using forward model
+    defocus_stack = forward_model.forward(gt_dpt, gt_aif)
+
+    return defocus_stack, gt_aif, gt_dpt
 
 
-def aif_initialization(defocus_stack):
-    # AIF initialization
 
-    # aif_init = initialization.trivial_aif_initialization(defocus_stack)
-    aif_init = initialization.compute_aif_initialization(defocus_stack, lmbda=0.05, sharpness_measure='sobel_grad')
-    # plt.imshow(aif_init / IMAGE_RANGE)
-    # plt.show()
-    
-    # plt.imshow(defocus_stack[1] / IMAGE_RANGE)
-    # plt.show()
-
-    return aif_init
-
-def coord_descent(defocus_stack, num_epochs = 40,
-                  save_plots = True, 
-                  least_squares_first = False,
-                  depth_init = None, aif_init = None,
-                  vmin = 0.1, vmax = 10, num_Z = 100, windowed_MSE = False):
-    # -------------------
-    # COORDINATE DESCENT
-    # -------------------
-    
-    dpt, aif, _, exp_folder = coordinate_descent.coordinate_descent(
-            defocus_stack,
-            experiment_folder='/data/holly_jackson/experiments/all-make3d-test',
-            show_plots=False, save_plots=save_plots,
-            experiment_name = EXPERIMENT_NAME, 
-            num_epochs = num_epochs,
-            least_squares_first = least_squares_first,
-            depth_init = depth_init, aif_init = aif_init, 
-            k = 1, aif_method = 'fista',
-            finite_differences = False, num_Z = num_Z, 
-            ls_maxiter = 200, ls_maxiter_multiplier = 1.05, 
-            vmin = vmin, vmax = vmax,
-            min_Z = globals.min_Z, max_Z = globals.max_Z,
-            verbose = False, windowed_mse = windowed_MSE
-    )
-
-    
-    return dpt, aif, exp_folder
+# =============================================================================
+# Main Pipeline
+# =============================================================================
 
 
 def main():
-    # Ensure correct usage
-    if len(sys.argv) != 2:
-        print("Usage: python run_coordinate_descent.py <example_name>")
+    """Run the Make3D depth-from-defocus pipeline."""
+    # Parse command-line arguments
+    if len(sys.argv) != 3:
+        print("Usage: python run_coordinate_descent_make3d.py <split> <img_name>")
+        print("  split: 'train' or 'test'")
+        print("  img_name: Image filename (e.g., 'img-math7-p-282t0.jpg')")
         sys.exit(1)
 
-    example_name = sys.argv[1]
+    split = sys.argv[1]
+    img_name = sys.argv[2]
+    config = MAKE3D
 
-    # load image
-    defocus_stack, gt_aif, gt_dpt = load_image(example_name)
+    # Generate experiment name
+    experiment_name = config.get_experiment_name(split, img_name)
+    print(f"Running experiment: {experiment_name}")
 
-    # aif initialization
-    aif_init = aif_initialization(defocus_stack)
-    
-    # coord descent
-    dpt, aif, exp_folder = coord_descent(
-        defocus_stack, save_plots = False,
-        num_epochs = 10, least_squares_first = False,
-        aif_init = aif_init,
-        vmin = globals.min_Z, vmax = globals.max_Z,
-        num_Z = 100, windowed_MSE = windowed_MSE
+    # Load ground truth and generate defocus stack
+    print("Loading ground truth and generating defocus stack...")
+    defocus_stack, gt_aif, gt_dpt = load_and_generate_defocus_stack(img_name, split, config)
+
+    # Compute AIF initialization
+    print("Computing AIF initialization...")
+    aif_init = initialization.compute_aif_initialization(
+        defocus_stack,
+        lmbda=config.aif_lambda,
+        sharpness_measure=config.aif_sharpness_measure
     )
 
-    # save final 
+    # Run coordinate descent optimization
+    print("Running coordinate descent optimization...")
+    dpt, aif, _, exp_folder = coordinate_descent.coordinate_descent(
+        defocus_stack,
+        experiment_folder=config.experiment_folder,
+        show_plots=config.show_plots,
+        save_plots=config.save_plots,
+        experiment_name=experiment_name,
+        num_epochs=config.num_epochs,
+        nesterov_first=config.nesterov_first,
+        aif_init=aif_init,
+        num_Z=config.num_z,
+        T_0=config.t_0,
+        alpha=config.alpha,
+        verbose=config.verbose,
+        windowed_mse=config.use_windowed_mse
+    )
+
+    # Save final results
+    print("Saving results...")
     utils.save_dpt_npy(exp_folder, 'dpt', dpt)
-    # print(aif.min(), aif.max())
-    # assert aif.min() > 0 and aif.max() > 1 and aif.max() <= 255 # remove later
     utils.save_aif(exp_folder, 'aif', aif)
 
-    # final metrics save to file
+    # Compute and save accuracy metrics
+    print("Computing accuracy metrics...")
     rms = utils.compute_RMS(dpt, gt_dpt)
     rel = utils.compute_AbsRel(dpt, gt_dpt)
     deltas = utils.compute_accuracy_metrics(dpt, gt_dpt)
+
     outfile = os.path.join(exp_folder, "accuracy_metrics.txt")
     delta_str = ", ".join(f"{float(deltas[d]):.6f}" for d in sorted(deltas.keys()))
     with open(outfile, "w", encoding="utf-8") as f:
         f.write(f"RMS: {float(rms):.6f}\n")
         f.write(f"Rel: {float(rel):.6f}\n")
         f.write(f"Accuracy (δ1, δ2, δ3): {delta_str}\n")
+
+    print(f"Results saved to: {exp_folder}")
+    print(f"RMS: {float(rms):.6f}, Rel: {float(rel):.6f}")
+
 
 if __name__ == "__main__":
     main()

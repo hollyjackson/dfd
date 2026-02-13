@@ -26,67 +26,19 @@ import globals
 # ============================================================================
 
 def total_variation(image):
-    """
-    Calculate the total variation of an image.
-
-    Total variation is the sum of absolute gradients in both x and y directions.
-    It's often used as a regularization term to encourage smooth solutions.
-
-    Args:
-        image: 2D numpy array
-
-    Returns:
-        float: Scalar total variation value
-    """
+    """Calculate the total variation of an image."""
     tv_x = np.abs(image[:, 1:] - image[:, :-1])  # Horizontal gradients
     tv_y = np.abs(image[1:, :] - image[:-1, :])  # Vertical gradients
     return np.sum(tv_x) + np.sum(tv_y)
 
 def compute_RMS(pred, gt):
-    """
-    Compute Root Mean Square (RMS) error between predicted and ground truth depth.
-
-    Args:
-        pred: Predicted depth map
-        gt: Ground truth depth map
-
-    Returns:
-        float: RMS error value
-    """
+    """Compute Root Mean Square (RMS) error between predicted and ground truth depth."""
     diff_sq = (pred - gt) ** 2
     return np.sqrt(np.mean(diff_sq))
 
 
-def compute_Rel(pred, gt):
-    """
-    Compute relative error with absolute values.
-
-    Calculates mean(|pred - gt| / |gt|) with epsilon for numerical stability.
-
-    Args:
-        pred: Predicted depth map
-        gt: Ground truth depth map
-
-    Returns:
-        float: Mean relative error
-    """
-    rel = np.abs(pred - gt) / (np.abs(gt) + 1e-8)
-    return np.mean(rel)
-
-
 def compute_AbsRel(pred, gt):
-    """
-    Compute absolute relative error.
-
-    Calculates mean(|pred - gt| / gt) with epsilon for numerical stability.
-
-    Args:
-        pred: Predicted depth map
-        gt: Ground truth depth map
-
-    Returns:
-        float: Mean absolute relative error
-    """
+    """Compute absolute relative error. Calculates mean(|pred - gt| / gt) with epsilon for numerical stability."""
     rel = np.abs(pred - gt) / (gt + 1e-8)
     return np.mean(rel)
 
@@ -94,16 +46,8 @@ def compute_AbsRel(pred, gt):
 def compute_accuracy_metrics(pred, gt):
     """
     Compute accuracy metrics as defined by Eigen et al.
-
     Returns δ1, δ2, δ3 metrics where:
     δ_k = fraction of pixels with max(pred/gt, gt/pred) < 1.25^k
-
-    Args:
-        pred: Predicted depth map
-        gt: Ground truth depth map
-
-    Returns:
-        dict: Dictionary containing delta1, delta2, and delta3 values
     """
     ratio = np.maximum(pred / (gt + 1e-8), gt / (pred + 1e-8))
     delta1 = np.mean(ratio < 1.25)
@@ -133,7 +77,7 @@ def get_worst_diff_pixels(recon, gt, num_worst_pixels=5, vmin=0.7, vmax=1.9):
     """
     diff = np.abs(recon - gt)
 
-    # Use argpartition for efficient k-largest selection
+    # Select num_worst_pixels worst pixels (by absolute difference)
     worst_indices = np.argpartition(diff.ravel(), -num_worst_pixels)[-num_worst_pixels:]
     worst_indices = worst_indices[np.argsort(diff.ravel()[worst_indices])[::-1]]
     worst_coords = [(idx // diff.shape[1], idx % diff.shape[1]) for idx in worst_indices]

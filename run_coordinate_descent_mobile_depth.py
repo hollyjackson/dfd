@@ -1,164 +1,131 @@
-import os
+"""
+Mobile Depth Dataset Processing Pipeline
+
+This script runs the coordinate descent depth-from-defocus algorithm on images
+from the Mobile Depth dataset. It performs the following steps:
+1. Load defocus stack from the Mobile Depth dataset
+2. Initialize all-in-focus (AIF) image using MRF optimization
+3. Run coordinate descent to jointly optimize depth map and AIF image
+4. Save results to experiment folder
+
+Usage:
+    python run_coordinate_descent_mobile_depth.py <example_name>
+
+Valid example names:
+    keyboard, bottles, fruits, metals, plants, telephone, window,
+    largemotion, smallmotion, zeromotion, balls
+"""
+
 import sys
 import numpy as np
-import matplotlib.pyplot as plt
-import skimage
 
 import utils
-import forward_model
 import globals
-#import gradient_descent
-import least_squares
-import section_search
 import coordinate_descent
 import initialization
+import dataset_loader
+from config import MOBILE_DEPTH
 
-#import torch
 
-# globals
-IMAGE_RANGE = 255.
-#FORWARD_KERNEL_TYPE = 'gaussian'
-EXPERIMENT_NAME = 'mobile-depth-'
-windowed_MSE = True
-globals.window_size = 50
-globals.thresh = 0.1#5
-if windowed_MSE:
-    EXPERIMENT_NAME += "windowed"+str(globals.window_size)+"-"
-EXPERIMENT_NAME += "thresh"+str(globals.thresh)+"-"
+# =============================================================================
+# Data Loading and Preprocessing
+# =============================================================================
 
-def load_image(example_name, min_Z, max_Z):
+def load_and_preprocess_image(example_name, config):
+    """
+    Load and preprocess a defocus stack from the Mobile Depth dataset.
 
+    Args:
+        example_name: Name of the example to load (e.g., "keyboard", "bottles")
+        config: Configuration object containing dataset parameters
+
+    Returns:
+        Preprocessed defocus stack of shape with edge padding applied
+    """
+    # Validate example name
+    assert example_name in config.valid_examples, \
+        f"Invalid example name. Must be one of: {config.valid_examples}"
+
+    # Initialize dataset-specific globals
     globals.init_MobileDepth()
+    globals.window_size = config.window_size
 
-    global EXPERIMENT_NAME
-    EXPERIMENT_NAME += example_name
+    # Load defocus stack from dataset
+    defocus_stack, dpt_result, scale_mat = dataset_loader.load_single_sample_MobileDepth(example_name, data_dir=config.data_dir)
 
-    
-    IMAGE_RANGE = 255.
-    assert example_name in ["keyboard", "bottles", "fruits", "metals", "plants", "telephone", "window", "largemotion", "smallmotion", "zeromotion", "balls"]
-    
-    defocus_stack, dpt_result, scale_mat = utils.load_single_sample_MobileDepth(example_name)
-    
-    #globals.window_size = 25
-    rad = globals.window_size // 2
-    
-    globals.ps = 0.75 * 2
-    
+    # Apply edge padding based on window size
+    rad = config.window_size // 2
     defocus_stack = np.stack([
-        np.pad(np.rot90(
-        skimage.transform.resize(img, (img.shape[0] // 2, img.shape[1] // 2), anti_aliasing=True)
-            , k=-1),
-               ((rad, rad), (rad, rad), (0, 0)), mode='edge')
+        np.pad(img, ((rad, rad), (rad, rad), (0, 0)), mode='edge')
         for img in defocus_stack
     ], axis=0)
-    
-    defocus_stack *= IMAGE_RANGE 
 
-    #globals.ps = 2 # 1 pixel in distance = 0.5 pixel in image 
-    # print('Pixel size:', globals.ps)
-    
-    
-    fs, width, height, _ = defocus_stack.shape
-    print(fs, width, height)
-    print(dpt_result.dtype, defocus_stack.dtype)
-    
-    globals.min_Z = min_Z
-    globals.max_Z = max_Z
-    print('Depth range', globals.min_Z,'-', globals.max_Z)
-
-    
+    # Set adaptive kernel size based on image dimensions
+    _, width, height, _ = defocus_stack.shape
     max_kernel_size = utils.kernel_size_heuristic(width, height)
-    print('adaptive kernel size set to',max_kernel_size)
+    print(f'Adaptive kernel size set to {max_kernel_size}')
     utils.update_max_kernel_size(max_kernel_size)
 
     return defocus_stack
 
 
-def aif_initialization(defocus_stack):
-    # AIF initialization
 
-    # aif_init = initialization.trivial_aif_initialization(defocus_stack)
-    aif_init = initialization.compute_aif_initialization(defocus_stack, lmbda=0.05, sharpness_measure='sobel_grad')
-    # plt.imshow(aif_init / IMAGE_RANGE)
-    # plt.show()
-    
-    # plt.imshow(defocus_stack[1] / IMAGE_RANGE)
-    # plt.show()
-
-    return aif_init
-
-def coord_descent(defocus_stack, num_epochs = 40,
-                  save_plots = True, 
-                  least_squares_first = False,
-                  depth_init = None, aif_init = None,
-                  vmin = 0.1, vmax = 10, windowed_MSE = False):
-    # -------------------
-    # COORDINATE DESCENT
-    # -------------------
-    
-    dpt, aif, _, exp_folder = coordinate_descent.coordinate_descent(
-            defocus_stack,
-            experiment_folder='/data/holly_jackson/experiments',
-            show_plots=False, save_plots=save_plots,
-            experiment_name = EXPERIMENT_NAME, 
-            num_epochs = num_epochs,
-            least_squares_first = least_squares_first,
-            depth_init = depth_init, aif_init = aif_init, 
-            k = 1, aif_method = 'fista',
-            finite_differences = False, num_Z = 200, 
-            ls_maxiter = 50, ls_maxiter_multiplier = 2, 
-            vmin = vmin, vmax = vmax,
-            min_Z = globals.min_Z, max_Z = globals.max_Z,
-            verbose = False, windowed_mse = windowed_MSE, test=True
-    )
-
-    
-    return dpt, aif, exp_folder
-
+# =============================================================================
+# Main Pipeline
+# =============================================================================
 
 def main():
-    # Ensure correct usage
-    if len(sys.argv) != 4:
-        print("Usage: python run_coordinate_descent.py <example_name> <min_Z> <max_Z>")
+    """Run the Mobile Depth depth-from-defocus pipeline."""
+    # Parse command-line arguments
+    if len(sys.argv) != 2:
+        print("Usage: python run_coordinate_descent_mobile_depth.py <example_name>")
+        print(f"Valid examples: {', '.join(MOBILE_DEPTH.valid_examples)}")
         sys.exit(1)
 
     example_name = sys.argv[1]
-    min_Z = float(sys.argv[2])
-    max_Z = float(sys.argv[3])
+    config = MOBILE_DEPTH
 
-    # load image
-    defocus_stack = load_image(example_name, min_Z, max_Z)
+    # Generate experiment name
+    experiment_name = config.get_experiment_name(example_name)
+    print(f"Running experiment: {experiment_name}")
 
-    # aif initialization
-    aif_init = aif_initialization(defocus_stack)
-    # depth_init = 20
-    
-    # coord descent
-    # globals.window = 3
-    dpt, aif, exp_folder = coord_descent(
-        defocus_stack, save_plots = False,
-        num_epochs = 7, least_squares_first = False,
-        aif_init = aif_init,
-        vmin = globals.min_Z, vmax = globals.max_Z,
-        windowed_MSE = windowed_MSE
+    # Load and preprocess defocus stack
+    print("Loading defocus stack...")
+    defocus_stack = load_and_preprocess_image(example_name, config)
+
+    # Compute AIF initialization
+    print("Computing AIF initialization...")
+    aif_init = initialization.compute_aif_initialization(
+        defocus_stack,
+        lmbda=config.aif_lambda,
+        sharpness_measure=config.aif_sharpness_measure
     )
 
-    # save final 
+    # Run coordinate descent optimization
+    print("Running coordinate descent optimization...")
+    dpt, aif, _, exp_folder = coordinate_descent.coordinate_descent(
+        defocus_stack,
+        experiment_folder=config.experiment_folder,
+        show_plots=config.show_plots,
+        save_plots=config.save_plots,
+        experiment_name=experiment_name,
+        num_epochs=config.num_epochs,
+        nesterov_first=config.nesterov_first,
+        aif_init=aif_init,
+        num_Z=config.num_z,
+        T_0=config.t_0,
+        alpha=config.alpha,
+        verbose=config.verbose,
+        windowed_mse=config.use_windowed_mse
+    )
+
+    # Save final results
+    print("Saving results...")
     utils.save_dpt_npy(exp_folder, 'dpt', dpt)
-    # print(aif.min(), aif.max())
-    # assert aif.min() > 0 and aif.max() > 1 and aif.max() <= 255 # remove later
     utils.save_aif(exp_folder, 'aif', aif)
 
-    # final metrics save to file
-    # rms = utils.compute_RMS(dpt, gt_dpt)
-    # rel = utils.compute_AbsRel(dpt, gt_dpt)
-    # deltas = utils.compute_accuracy_metrics(dpt, gt_dpt)
-    # outfile = os.path.join(exp_folder, "accuracy_metrics.txt")
-    # delta_str = ", ".join(f"{float(deltas[d]):.6f}" for d in sorted(deltas.keys()))
-    # with open(outfile, "w", encoding="utf-8") as f:
-    #     f.write(f"RMS: {float(rms):.6f}\n")
-    #     f.write(f"Rel: {float(rel):.6f}\n")
-    #     f.write(f"Accuracy (δ1, δ2, δ3): {delta_str}\n")
+    print(f"Results saved to: {exp_folder}")
+
 
 if __name__ == "__main__":
     main()

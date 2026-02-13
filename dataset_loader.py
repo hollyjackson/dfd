@@ -78,9 +78,9 @@ def load_NYUv2_aif(path_to_file, resize_frac=2):
     Returns
     -------
     aif : ndarray, shape (width, height, 3)
-        All-in-focus image normalised to [0, 1], dtype float32.
+        All-in-focus image [0, 255], dtype float32.
     """
-    aif = skimage.io.imread(path_to_file).astype(np.float32) / 255.0
+    aif = skimage.io.imread(path_to_file).astype(np.float32) #/ 255.0
     width, height, _ = aif.shape
     if resize_frac != 1:
         aif = skimage.transform.resize(
@@ -92,7 +92,7 @@ def load_NYUv2_aif(path_to_file, resize_frac=2):
         )
     return aif
 
-def load_single_sample(data_dir='data', sample='0045', set='train', res='half'):
+def load_single_sample_NYUv2(data_dir='data', sample='0045', set='train', res='half'):
     """Load a single NYUv2 RGB-D sample.
 
     If fs=10, sets globals.Df to the 10-plane focus distance array as a
@@ -112,7 +112,7 @@ def load_single_sample(data_dir='data', sample='0045', set='train', res='half'):
     Returns
     -------
     aif : ndarray, shape (width, height, 3)
-        All-in-focus image normalised to [0, 1].
+        All-in-focus image [0, 255].
     dpt : ndarray, shape (width, height)
         Depth map in metres.
     """
@@ -164,15 +164,15 @@ def _load_make3d_image(img_filename):
     Returns
     -------
     aif : ndarray, shape (460, 345, 3)
-        RGB image normalised to [0, 1], dtype float32.
+        RGB image [0, 255], dtype float32.
     """
     # one image in the dataset requires EXIF-based rotation correction
     if os.path.basename(img_filename) == "img-op29-p-295t000.jpg":
         im = Image.open(img_filename)
         im = ImageOps.exif_transpose(im)
-        aif = np.array(im.convert("RGB"), dtype=np.float32) / 255.
+        aif = np.array(im.convert("RGB"), dtype=np.float32) #/ 255.
     else:
-        aif = np.array(Image.open(img_filename), dtype=np.float32) / 255.
+        aif = np.array(Image.open(img_filename), dtype=np.float32) #/ 255.
 
     original_width = aif.shape[0]
 
@@ -215,7 +215,7 @@ def _load_make3d_depth(dpt_filename):
     return dpt[:, :, 3]
 
 
-def load_single_sample_Make3D(img_name="img-math7-p-282t0.jpg", data_dir="/data/holly_jackson/", split='train'):
+def load_single_sample_Make3D(img_name="img-math7-p-282t0.jpg", split='train', data_dir="data"):
     """Load a single Make3D RGB image and its ground-truth depth map.
 
     Sets globals.f, globals.D, and globals.ps from EXIF data and image
@@ -232,9 +232,9 @@ def load_single_sample_Make3D(img_name="img-math7-p-282t0.jpg", data_dir="/data/
 
     Returns
     -------
-    aif : ndarray, shape (460, 345, 3)
-        RGB image normalised to [0, 1].
-    dpt : ndarray, shape (H, W)
+    aif : ndarray,
+        RGB image [0, 255].
+    dpt : ndarray,
         Depth map in metres.
     """
     assert split in ('train', 'test')
@@ -244,11 +244,19 @@ def load_single_sample_Make3D(img_name="img-math7-p-282t0.jpg", data_dir="/data/
     img_filename = os.path.join(data_dir, 'Make3D', img_subdir, img_name)
 
     _load_make3d_camera_params(img_filename)
-    aif = _load_make3d_image(img_filename)
+    aif = _load_make3d_image(img_filename) #* 255.
 
     part = img_name.split("img-")[1].split(".jpg")[0]
     dpt_filename = os.path.join(data_dir, 'Make3D', dpt_subdir, "depth_sph_corr-" + part + ".mat")
     dpt = _load_make3d_depth(dpt_filename)
+
+    dpt = skimage.transform.resize(
+        dpt,
+        output_shape=(460, 345),
+        order=1,                  # bilinear interpolation
+        anti_aliasing=True,
+        preserve_range=True
+    )
 
     return aif, dpt
 
@@ -298,6 +306,7 @@ def _find_mobile_depth_example_dir(focal_stack_dir, example_name):
         if os.path.isdir(subdir):
             candidate = os.path.join(subdir, example_name)
             if os.path.isdir(candidate):
+                print("Found at:", os.path.abspath(candidate))
                 return candidate
     raise FileNotFoundError(f"Example '{example_name}' not found in {focal_stack_dir}")
 
@@ -327,7 +336,7 @@ def _load_mobile_depth_focal_stack(example_dir, resize_frac):
     )
     frames = []
     for path in paths:
-        frame = np.array(Image.open(path), dtype=np.float32) / 255.
+        frame = np.array(Image.open(path), dtype=np.float32) #/ 255.
         if resize_frac != 1:
             width, height, _ = frame.shape
             frame = skimage.transform.resize(
@@ -384,7 +393,7 @@ def _load_mobile_depth_calibration(example_name, data_path):
     return calib_dir
 
 
-def load_single_sample_MobileDepth(example_name="keyboard", res='full'):
+def load_single_sample_MobileDepth(example_name="keyboard", res="half", data_dir="data"):
     """Load a MobileDepth focal stack with calibration data and depth result.
 
     Sets globals.Df, globals.f, and globals.D from the per-scene calibration
@@ -396,7 +405,7 @@ def load_single_sample_MobileDepth(example_name="keyboard", res='full'):
         Scene name.  Must be one of: keyboard, bottles, fruits, metals,
         plants, telephone, window, largemotion, smallmotion, zeromotion, balls.
     res : str
-        Resolution: 'full' (default) or 'half'.
+        Resolution: 'full' or 'half' (default).
 
     Returns
     -------
@@ -411,7 +420,7 @@ def load_single_sample_MobileDepth(example_name="keyboard", res='full'):
     assert example_name in _MOBILE_DEPTH_VALID_EXAMPLES
     assert res in ('full', 'half')
 
-    data_path = os.path.join(os.getcwd(), 'MobileDepth')
+    data_path = os.path.join(os.getcwd(), data_dir, 'MobileDepth')
     focal_stack_dir = os.path.join(data_path, 'aligned-focus-stack', 'Aligned')
 
     example_dir = _find_mobile_depth_example_dir(focal_stack_dir, example_name)
@@ -419,8 +428,21 @@ def load_single_sample_MobileDepth(example_name="keyboard", res='full'):
     defocus_stack = _load_mobile_depth_focal_stack(example_dir, resize_frac)
 
     calib_dir = _load_mobile_depth_calibration(example_name, data_path)
+    
+    order = np.argsort(globals.Df)
+    globals.Df = globals.Df[order]
+    defocus_stack = defocus_stack[order]
+
     dpt_result = utils.read_bin_file(os.path.join(calib_dir, "depth_var.bin")).astype(np.float32)
     scale_mat = utils.read_bin_file(os.path.join(calib_dir, "scaleMatrix.bin"))
+
+    # Rotate and resize to half
+    defocus_stack = np.stack([
+        np.rot90(
+            skimage.transform.resize(img, (img.shape[0] // 2, img.shape[1] // 2), anti_aliasing=True) if res == 'half' else img
+        , k=-1)
+        for img in defocus_stack
+    ], axis=0)
 
     return defocus_stack, dpt_result, scale_mat
 
