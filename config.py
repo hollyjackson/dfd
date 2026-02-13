@@ -50,6 +50,8 @@ class MobileDepthConfig(BaseConfig):
     t_0: int = 10
     alpha: float = 2.0
 
+    experiment_folder: str = 'experiments/mobiledepth'
+
     # Valid example names
     valid_examples: tuple = (
         "keyboard", "bottles", "fruits", "metals", "plants",
@@ -80,6 +82,8 @@ class Make3DConfig(BaseConfig):
     t_0: int = 10
     alpha: float = 2.0
 
+    experiment_folder: str = 'experiments/make3d'
+
     def get_experiment_name(self, split: str, img_name: str) -> str:
         """Generate experiment name for Make3D."""
         name = 'make3d-'
@@ -102,6 +106,8 @@ class NYUv2Config(BaseConfig):
     num_z: int = 100
     t_0: int = 200
     alpha: float = 1.05
+
+    experiment_folder: str = 'experiments/nyuv2'
 
     def get_experiment_name(self, split: str, image_number: str) -> str:
         """Generate experiment name for NYUv2."""
