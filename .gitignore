@@ -1,10 +1,11 @@
-results/
-*.png
-experiments/
-__pycache__/
-.ipynb_checkpoints/
 data/
+results/
+experiments/
+dfd-sparse/
+__pycache__/
+.pytest_cache/
+.ipynb_checkpoints/
 pyGCO
 *.csv
 *.sh
-dfd-sparse/
+*.png

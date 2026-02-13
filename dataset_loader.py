@@ -475,7 +475,7 @@ def load_example_image(fs=5, data_dir='data', res='half'):
     Returns
     -------
     aif : ndarray, shape (width, height, 3)
-        All-in-focus image normalised to [0, 1].
+        All-in-focus image in [0, 255] range.
     dpt : ndarray, shape (width, height)
         Depth map in metres.
     gt_defocus_stack : list of ndarray
