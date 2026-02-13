@@ -15,18 +15,12 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 import globals
+import utils
 
 
 # ---------------------------------------------------------------------------
 # TV-based detection
 # ---------------------------------------------------------------------------
-
-def total_variation(image):
-    """Return the scalar total variation of *image* (sum of absolute gradients)."""
-    tv_x = np.abs(image[:, 1:] - image[:, :-1])
-    tv_y = np.abs(image[1:, :] - image[:-1, :])
-    return np.sum(tv_x) + np.sum(tv_y)
-
 
 def compute_tv_map(image, patch_size=None):
     """Compute a per-pixel total-variation map using local patches.
@@ -57,7 +51,7 @@ def compute_tv_map(image, patch_size=None):
     for i in range(pad, width - pad):
         for j in range(pad, height - pad):
             window = image[i - pad:i + pad + 1, j - pad:j + pad + 1]
-            tv_map[i, j] = total_variation(window) / patch_size**2
+            tv_map[i, j] = utils.total_variation(window) / patch_size**2
 
     return tv_map
 
