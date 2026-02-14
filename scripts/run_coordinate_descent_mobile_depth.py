@@ -23,10 +23,10 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 import numpy as np
 
 import utils
-import globals
 import coordinate_descent
 import initialization
 import dataset_loader
+from dataset_params import DatasetParams
 from config import MOBILE_DEPTH
 
 
@@ -43,18 +43,18 @@ def load_and_preprocess_image(example_name, config):
         config: Configuration object containing dataset parameters
 
     Returns:
-        Preprocessed defocus stack of shape with edge padding applied
+        Tuple of (defocus_stack, dataset_params, max_kernel_size)
     """
     # Validate example name
     assert example_name in config.valid_examples, \
         f"Invalid example name. Must be one of: {config.valid_examples}"
 
-    # Initialize dataset-specific globals
-    globals.init_MobileDepth()
-    globals.window_size = config.window_size
+    dataset_params = DatasetParams.for_MobileDepth()
 
-    # Load defocus stack from dataset
-    defocus_stack, dpt_result, scale_mat = dataset_loader.load_single_sample_MobileDepth(example_name, data_dir=config.data_dir)
+    # Load defocus stack from dataset (sets Df, f, D on dataset_params)
+    defocus_stack, dpt_result, scale_mat = dataset_loader.load_single_sample_MobileDepth(
+        example_name, dataset_params=dataset_params, data_dir=config.data_dir
+    )
 
     # Apply edge padding based on window size
     rad = config.window_size // 2
@@ -67,9 +67,8 @@ def load_and_preprocess_image(example_name, config):
     _, width, height, _ = defocus_stack.shape
     max_kernel_size = utils.kernel_size_heuristic(width, height)
     print(f'Adaptive kernel size set to {max_kernel_size}')
-    utils.update_max_kernel_size(max_kernel_size)
 
-    return defocus_stack
+    return defocus_stack, dataset_params, max_kernel_size
 
 
 
@@ -94,7 +93,7 @@ def main():
 
     # Load and preprocess defocus stack
     print("Loading defocus stack...")
-    defocus_stack = load_and_preprocess_image(example_name, config)
+    defocus_stack, dataset_params, max_kernel_size = load_and_preprocess_image(example_name, config)
 
     # Compute AIF initialization
     print("Computing AIF initialization...")
@@ -108,6 +107,8 @@ def main():
     print("Running coordinate descent optimization...")
     dpt, aif, _, exp_folder = coordinate_descent.coordinate_descent(
         defocus_stack,
+        dataset_params,
+        max_kernel_size,
         experiment_folder=config.experiment_folder,
         show_plots=config.show_plots,
         save_plots=config.save_plots,
@@ -119,7 +120,8 @@ def main():
         T_0=config.t_0,
         alpha=config.alpha,
         verbose=config.verbose,
-        windowed_mse=config.use_windowed_mse
+        windowed_mse=config.use_windowed_mse,
+        window_size=config.window_size
     )
 
     # Save final results

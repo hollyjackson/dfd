@@ -1,9 +1,7 @@
 import numpy as np
-import globals
 import outlier_removal
 
-# Set the one global this module needs
-globals.MAX_KERNEL_SIZE = 7
+MAX_KERNEL_SIZE = 7
 
 
 
@@ -109,7 +107,7 @@ def test_remove_outliers_no_change_when_clean():
     aif[::2, ::2, :] = 255
     depth_copy = depth.copy()
     result, frac = outlier_removal.remove_outliers(
-        depth, aif, patch_type='constant', diff_thresh=2, to_plot=False
+        depth, aif, MAX_KERNEL_SIZE, patch_type='constant', diff_thresh=2, to_plot=False
     )
     assert np.allclose(result, depth_copy)
     assert frac == 0.0
@@ -120,7 +118,7 @@ def test_remove_outliers_replaces_spike():
     depth[7, 7] = 50.0              # isolated spike that TV will flag
     aif = np.zeros((15, 15, 3), dtype=np.uint8)
     result, frac = outlier_removal.remove_outliers(
-        depth.copy(), aif, patch_type='tv', tv_thresh=0.5, to_plot=False
+        depth.copy(), aif, MAX_KERNEL_SIZE, patch_type='tv', tv_thresh=0.5, to_plot=False
     )
     assert result[7, 7] < 50.0     # replaced with neighbour average (~2.0)
     assert frac > 0.0
@@ -130,7 +128,7 @@ def test_remove_outliers_fraction_range():
     aif = np.full((10, 10, 3), 128, dtype=np.uint8)   # all-constant → all flagged
     depth = np.ones((10, 10), dtype=np.float32)
     _, frac = outlier_removal.remove_outliers(
-        depth.copy(), aif, patch_type='constant', diff_thresh=2, to_plot=False
+        depth.copy(), aif, MAX_KERNEL_SIZE, patch_type='constant', diff_thresh=2, to_plot=False
     )
     assert 0.0 <= frac <= 1.0
 
@@ -139,7 +137,7 @@ def test_remove_outliers_invalid_patch_type():
     try:
         outlier_removal.remove_outliers(
             np.ones((5, 5)), np.zeros((5, 5, 3), dtype=np.uint8),
-            patch_type='unknown', to_plot=False
+            MAX_KERNEL_SIZE, patch_type='unknown', to_plot=False
         )
         assert False, "Should have raised AssertionError for unknown patch_type"
     except AssertionError:

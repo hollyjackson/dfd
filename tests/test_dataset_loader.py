@@ -7,11 +7,9 @@ import skimage.io
 from PIL import Image
 from scipy.io import savemat
 
-import globals
 import utils
 import dataset_loader
-
-globals.init_NYUv2()
+from dataset_params import DatasetParams
 
 
 # ---------------------------------------------------------------------------
@@ -271,20 +269,20 @@ def test_load_mobile_depth_focal_stack_half_res():
 # _load_mobile_depth_calibration
 # ---------------------------------------------------------------------------
 
-def test_load_mobile_depth_calibration_sets_globals():
+def test_load_mobile_depth_calibration_values():
     focal_depths = [1.0, 1.5, 2.0]
     with tempfile.TemporaryDirectory() as root:
         _write_calib(root, 'keyboard', focal_depths, aperture=0.125, focal_length=0.005)
-        dataset_loader._load_mobile_depth_calibration('keyboard', root)
-        assert np.allclose(globals.Df, focal_depths)
-        assert globals.f == 0.005
-        assert globals.D == 0.125
+        calib_dir, Df, f, D = dataset_loader._load_mobile_depth_calibration('keyboard', root)
+        assert np.allclose(Df, focal_depths)
+        assert f == 0.005
+        assert D == 0.125
 
 
 def test_load_mobile_depth_calibration_returns_calib_dir():
     with tempfile.TemporaryDirectory() as root:
         _write_calib(root, 'keyboard', [1.0, 2.0], aperture=0.1, focal_length=0.004)
-        calib_dir = dataset_loader._load_mobile_depth_calibration('keyboard', root)
+        calib_dir, _, _, _ = dataset_loader._load_mobile_depth_calibration('keyboard', root)
         expected = os.path.join(root, 'photos-calibration-results', 'calibration', 'keyboard')
         assert calib_dir == expected
 
@@ -293,8 +291,8 @@ def test_load_mobile_depth_calibration_name_remapping():
     # 'metals' should resolve to the 'metal' calibration folder
     with tempfile.TemporaryDirectory() as root:
         _write_calib(root, 'metal', [1.0], aperture=0.1, focal_length=0.004)
-        dataset_loader._load_mobile_depth_calibration('metals', root)
-        assert np.allclose(globals.Df, [1.0])
+        _, Df, _, _ = dataset_loader._load_mobile_depth_calibration('metals', root)
+        assert np.allclose(Df, [1.0])
 
 
 # ---------------------------------------------------------------------------
@@ -326,7 +324,7 @@ if __name__ == '__main__':
         test_load_mobile_depth_focal_stack_shape,
         test_load_mobile_depth_focal_stack_range,
         test_load_mobile_depth_focal_stack_half_res,
-        test_load_mobile_depth_calibration_sets_globals,
+        test_load_mobile_depth_calibration_values,
         test_load_mobile_depth_calibration_returns_calib_dir,
         test_load_mobile_depth_calibration_name_remapping,
     ]

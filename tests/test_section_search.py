@@ -1,13 +1,13 @@
 import numpy as np
 import scipy.sparse
 
-import globals
 import forward_model
 import section_search
+from dataset_params import DatasetParams
 
-globals.init_NYUv2()
-globals.MAX_KERNEL_SIZE = 7
-globals.window_size = 3
+dataset_params = DatasetParams.for_NYUv2()
+MAX_KERNEL_SIZE = 7
+WINDOW_SIZE = 3
 
 
 # ---------------------------------------------------------------------------
@@ -16,38 +16,38 @@ globals.window_size = 3
 
 def test_windowed_mse_grid_shape():
     width, height = 20, 20
-    fs = len(globals.Df)
+    fs = len(dataset_params.Df)
     defocus_stack = np.random.rand(fs, width, height, 3).astype(np.float32)
     pred = np.random.rand(fs, width, height, 3).astype(np.float32)
 
-    loss = section_search.windowed_mse_grid(defocus_stack, pred)
+    loss = section_search.windowed_mse_grid(defocus_stack, pred, WINDOW_SIZE)
     assert loss.shape == (width, height)
 
 
 def test_windowed_mse_grid_perfect_match_gives_zero():
     width, height = 20, 20
-    fs = len(globals.Df)
+    fs = len(dataset_params.Df)
     defocus_stack = np.random.rand(fs, width, height, 3).astype(np.float32)
 
-    loss = section_search.windowed_mse_grid(defocus_stack, defocus_stack)
+    loss = section_search.windowed_mse_grid(defocus_stack, defocus_stack, WINDOW_SIZE)
     assert np.allclose(loss, 0.0, atol=1e-6)
 
 
 def test_windowed_mse_grid_positive():
     # MSE should always be non-negative
     width, height = 15, 15
-    fs = len(globals.Df)
+    fs = len(dataset_params.Df)
     defocus_stack = np.random.rand(fs, width, height, 3).astype(np.float32)
     pred = np.random.rand(fs, width, height, 3).astype(np.float32)
 
-    loss = section_search.windowed_mse_grid(defocus_stack, pred)
+    loss = section_search.windowed_mse_grid(defocus_stack, pred, WINDOW_SIZE)
     assert np.all(loss >= 0)
 
 
 def test_windowed_mse_grid_symmetric_around_center():
     # For a centered feature, windowed MSE should be roughly symmetric
     width, height = 20, 20
-    fs = len(globals.Df)
+    fs = len(dataset_params.Df)
 
     # Create symmetric defocus stack (constant)
     defocus_stack = np.ones((fs, width, height, 3), dtype=np.float32) * 0.5
@@ -58,7 +58,7 @@ def test_windowed_mse_grid_symmetric_around_center():
     pred = defocus_stack.copy()
     pred[:, :, :, 0] += error_pattern[None, :, :] * 0.1
 
-    loss = section_search.windowed_mse_grid(defocus_stack, pred)
+    loss = section_search.windowed_mse_grid(defocus_stack, pred, WINDOW_SIZE)
     # Loss at center should be roughly equal from all symmetric directions
     center = loss[center_y, center_x]
     assert center > 0  # There should be some error
@@ -67,17 +67,12 @@ def test_windowed_mse_grid_symmetric_around_center():
 def test_windowed_mse_grid_window_size_effect():
     # With window_size=1 (no windowing), should equal direct MSE
     width, height = 10, 10
-    fs = len(globals.Df)
+    fs = len(dataset_params.Df)
     defocus_stack = np.random.rand(fs, width, height, 3).astype(np.float32)
     pred = np.random.rand(fs, width, height, 3).astype(np.float32)
 
-    old_window_size = globals.window_size
-    globals.window_size = 1
-
-    loss_windowed = section_search.windowed_mse_grid(defocus_stack, pred)
+    loss_windowed = section_search.windowed_mse_grid(defocus_stack, pred, window_size=1)
     direct_mse = np.mean((defocus_stack - pred)**2, axis=(0, -1))
-
-    globals.window_size = old_window_size
 
     assert np.allclose(loss_windowed, direct_mse, atol=1e-5)
 
@@ -88,11 +83,11 @@ def test_windowed_mse_grid_window_size_effect():
 
 def test_windowed_mse_grid_fast_shape():
     width, height = 20, 20
-    fs = len(globals.Df)
+    fs = len(dataset_params.Df)
     defocus_stack = np.random.rand(fs, width, height, 3).astype(np.float32)
     pred = np.random.rand(fs, width, height, 3).astype(np.float32)
 
-    loss = section_search.windowed_mse_grid_fast(defocus_stack, pred)
+    loss = section_search.windowed_mse_grid_fast(defocus_stack, pred, WINDOW_SIZE)
     assert loss.shape == (width, height)
 
 
@@ -101,12 +96,12 @@ def test_windowed_mse_grid_fast_vs_slow():
     # Note: windowed_mse_grid_fast has a TODO to verify against windowed_mse_grid
     # This test checks basic compatibility but may need adjustment
     width, height = 20, 20
-    fs = len(globals.Df)
+    fs = len(dataset_params.Df)
     defocus_stack = np.random.rand(fs, width, height, 3).astype(np.float32)
     pred = np.random.rand(fs, width, height, 3).astype(np.float32)
 
-    loss_slow = section_search.windowed_mse_grid(defocus_stack, pred)
-    loss_fast = section_search.windowed_mse_grid_fast(defocus_stack, pred)
+    loss_slow = section_search.windowed_mse_grid(defocus_stack, pred, WINDOW_SIZE)
+    loss_fast = section_search.windowed_mse_grid_fast(defocus_stack, pred, WINDOW_SIZE)
 
     # Both should have same shape
     assert loss_slow.shape == loss_fast.shape
@@ -127,10 +122,10 @@ def test_windowed_mse_grid_fast_vs_slow():
 
 def test_windowed_mse_grid_fast_perfect_match():
     width, height = 20, 20
-    fs = len(globals.Df)
+    fs = len(dataset_params.Df)
     defocus_stack = np.random.rand(fs, width, height, 3).astype(np.float32)
 
-    loss = section_search.windowed_mse_grid_fast(defocus_stack, defocus_stack)
+    loss = section_search.windowed_mse_grid_fast(defocus_stack, defocus_stack, WINDOW_SIZE)
     assert np.allclose(loss, 0.0, atol=1e-6)
 
 
@@ -140,25 +135,26 @@ def test_windowed_mse_grid_fast_perfect_match():
 
 def test_windowed_mse_gss_shape():
     width, height = 10, 10
-    fs = len(globals.Df)
     depth_map = np.full((width, height), 2.0, dtype=np.float32)
     gt_aif = np.random.rand(width, height, 3).astype(np.float32) * 255
-    indices = forward_model.precompute_indices(width, height)
-    defocus_stack = forward_model.forward(depth_map, gt_aif, indices=indices)
+    indices = forward_model.precompute_indices(width, height, MAX_KERNEL_SIZE)
+    defocus_stack = forward_model.forward(depth_map, gt_aif, dataset_params, MAX_KERNEL_SIZE, indices=indices)
 
-    loss = section_search.windowed_mse_gss(depth_map, gt_aif, defocus_stack, indices=indices)
+    loss = section_search.windowed_mse_gss(depth_map, gt_aif, defocus_stack, dataset_params,
+                                           MAX_KERNEL_SIZE, WINDOW_SIZE, indices=indices)
     assert loss.shape == (width, height)
 
 
 def test_windowed_mse_gss_perfect_reconstruction():
     # If depth_map is ground truth, loss should be near zero
     width, height = 10, 10
-    gt_dpt = np.full((width, height), globals.Df[1], dtype=np.float32)
+    gt_dpt = np.full((width, height), dataset_params.Df[1], dtype=np.float32)
     gt_aif = np.random.rand(width, height, 3).astype(np.float32) * 255
-    indices = forward_model.precompute_indices(width, height)
-    defocus_stack = forward_model.forward(gt_dpt, gt_aif, indices=indices)
+    indices = forward_model.precompute_indices(width, height, MAX_KERNEL_SIZE)
+    defocus_stack = forward_model.forward(gt_dpt, gt_aif, dataset_params, MAX_KERNEL_SIZE, indices=indices)
 
-    loss = section_search.windowed_mse_gss(gt_dpt, gt_aif, defocus_stack, indices=indices)
+    loss = section_search.windowed_mse_gss(gt_dpt, gt_aif, defocus_stack, dataset_params,
+                                           MAX_KERNEL_SIZE, WINDOW_SIZE, indices=indices)
     assert np.allclose(loss, 0.0, atol=1e-3)
 
 
@@ -166,10 +162,11 @@ def test_windowed_mse_gss_non_negative():
     width, height = 10, 10
     depth_map = np.random.rand(width, height).astype(np.float32) * 5 + 0.5
     gt_aif = np.random.rand(width, height, 3).astype(np.float32) * 255
-    indices = forward_model.precompute_indices(width, height)
-    defocus_stack = np.random.rand(len(globals.Df), width, height, 3).astype(np.float32) * 255
+    indices = forward_model.precompute_indices(width, height, MAX_KERNEL_SIZE)
+    defocus_stack = np.random.rand(len(dataset_params.Df), width, height, 3).astype(np.float32) * 255
 
-    loss = section_search.windowed_mse_gss(depth_map, gt_aif, defocus_stack, indices=indices)
+    loss = section_search.windowed_mse_gss(depth_map, gt_aif, defocus_stack, dataset_params,
+                                           MAX_KERNEL_SIZE, WINDOW_SIZE, indices=indices)
     assert np.all(loss >= 0)
 
 
@@ -181,21 +178,23 @@ def test_objective_full_shape():
     width, height = 10, 10
     dpt = np.full((width, height), 2.0, dtype=np.float32)
     aif = np.random.rand(width, height, 3).astype(np.float32) * 255
-    indices = forward_model.precompute_indices(width, height)
-    defocus_stack = forward_model.forward(dpt, aif, indices=indices)
+    indices = forward_model.precompute_indices(width, height, MAX_KERNEL_SIZE)
+    defocus_stack = forward_model.forward(dpt, aif, dataset_params, MAX_KERNEL_SIZE, indices=indices)
 
-    loss = section_search.objective_full(dpt, aif, defocus_stack, indices=indices)
+    loss = section_search.objective_full(dpt, aif, defocus_stack, dataset_params, MAX_KERNEL_SIZE,
+                                         indices=indices)
     assert loss.shape == (width, height)
 
 
 def test_objective_full_perfect_reconstruction():
     width, height = 10, 10
-    dpt = np.full((width, height), globals.Df[0], dtype=np.float32)
+    dpt = np.full((width, height), dataset_params.Df[0], dtype=np.float32)
     aif = np.random.rand(width, height, 3).astype(np.float32) * 255
-    indices = forward_model.precompute_indices(width, height)
-    defocus_stack = forward_model.forward(dpt, aif, indices=indices)
+    indices = forward_model.precompute_indices(width, height, MAX_KERNEL_SIZE)
+    defocus_stack = forward_model.forward(dpt, aif, dataset_params, MAX_KERNEL_SIZE, indices=indices)
 
-    loss = section_search.objective_full(dpt, aif, defocus_stack, indices=indices)
+    loss = section_search.objective_full(dpt, aif, defocus_stack, dataset_params, MAX_KERNEL_SIZE,
+                                         indices=indices)
     assert np.allclose(loss, 0.0, atol=1e-4)
 
 
@@ -203,10 +202,11 @@ def test_objective_full_non_negative():
     width, height = 10, 10
     dpt = np.random.rand(width, height).astype(np.float32) * 5 + 0.5
     aif = np.random.rand(width, height, 3).astype(np.float32) * 255
-    defocus_stack = np.random.rand(len(globals.Df), width, height, 3).astype(np.float32) * 255
-    indices = forward_model.precompute_indices(width, height)
+    defocus_stack = np.random.rand(len(dataset_params.Df), width, height, 3).astype(np.float32) * 255
+    indices = forward_model.precompute_indices(width, height, MAX_KERNEL_SIZE)
 
-    loss = section_search.objective_full(dpt, aif, defocus_stack, indices=indices)
+    loss = section_search.objective_full(dpt, aif, defocus_stack, dataset_params, MAX_KERNEL_SIZE,
+                                         indices=indices)
     assert np.all(loss >= 0)
 
 
@@ -215,12 +215,14 @@ def test_objective_full_with_precomputed_pred():
     width, height = 10, 10
     dpt = np.full((width, height), 2.0, dtype=np.float32)
     aif = np.random.rand(width, height, 3).astype(np.float32) * 255
-    indices = forward_model.precompute_indices(width, height)
-    pred = forward_model.forward(dpt, aif, indices=indices)
+    indices = forward_model.precompute_indices(width, height, MAX_KERNEL_SIZE)
+    pred = forward_model.forward(dpt, aif, dataset_params, MAX_KERNEL_SIZE, indices=indices)
     defocus_stack = pred.copy()
 
-    loss_with_pred = section_search.objective_full(dpt, aif, defocus_stack, indices=indices, pred=pred)
-    loss_without_pred = section_search.objective_full(dpt, aif, defocus_stack, indices=indices)
+    loss_with_pred = section_search.objective_full(dpt, aif, defocus_stack, dataset_params, MAX_KERNEL_SIZE,
+                                                   indices=indices, pred=pred)
+    loss_without_pred = section_search.objective_full(dpt, aif, defocus_stack, dataset_params, MAX_KERNEL_SIZE,
+                                                      indices=indices)
 
     assert np.allclose(loss_with_pred, loss_without_pred, atol=1e-5)
 
@@ -230,16 +232,13 @@ def test_objective_full_windowed_vs_non_windowed():
     width, height = 15, 15
     dpt = np.full((width, height), 2.0, dtype=np.float32)
     aif = np.random.rand(width, height, 3).astype(np.float32) * 255
-    indices = forward_model.precompute_indices(width, height)
-    defocus_stack = np.random.rand(len(globals.Df), width, height, 3).astype(np.float32) * 255
+    indices = forward_model.precompute_indices(width, height, MAX_KERNEL_SIZE)
+    defocus_stack = np.random.rand(len(dataset_params.Df), width, height, 3).astype(np.float32) * 255
 
-    old_window_size = globals.window_size
-    globals.window_size = 3
-
-    loss_windowed = section_search.objective_full(dpt, aif, defocus_stack, indices=indices, windowed=True)
-    loss_plain = section_search.objective_full(dpt, aif, defocus_stack, indices=indices, windowed=False)
-
-    globals.window_size = old_window_size
+    loss_windowed = section_search.objective_full(dpt, aif, defocus_stack, dataset_params, MAX_KERNEL_SIZE,
+                                                  window_size=WINDOW_SIZE, indices=indices, windowed=True)
+    loss_plain = section_search.objective_full(dpt, aif, defocus_stack, dataset_params, MAX_KERNEL_SIZE,
+                                               indices=indices, windowed=False)
 
     assert loss_windowed.shape == loss_plain.shape
     assert np.all(loss_windowed >= 0)
@@ -252,14 +251,16 @@ def test_objective_full_grid_search_path():
     constant_depth = 2.5
     dpt = np.full((width, height), constant_depth, dtype=np.float32)
     aif = np.random.rand(width, height, 3).astype(np.float32) * 255
-    indices = forward_model.precompute_indices(width, height)
-    defocus_stack = np.random.rand(len(globals.Df), width, height, 3).astype(np.float32) * 255
+    indices = forward_model.precompute_indices(width, height, MAX_KERNEL_SIZE)
+    defocus_stack = np.random.rand(len(dataset_params.Df), width, height, 3).astype(np.float32) * 255
 
     # Should work for both windowed and non-windowed
-    loss = section_search.objective_full(dpt, aif, defocus_stack, indices=indices, windowed=False)
+    loss = section_search.objective_full(dpt, aif, defocus_stack, dataset_params, MAX_KERNEL_SIZE,
+                                         indices=indices, windowed=False)
     assert loss.shape == (width, height)
 
-    loss_windowed = section_search.objective_full(dpt, aif, defocus_stack, indices=indices, windowed=True)
+    loss_windowed = section_search.objective_full(dpt, aif, defocus_stack, dataset_params, MAX_KERNEL_SIZE,
+                                                  window_size=WINDOW_SIZE, indices=indices, windowed=True)
     assert loss_windowed.shape == (width, height)
 
 
@@ -268,15 +269,11 @@ def test_objective_full_non_constant_depth():
     width, height = 10, 10
     dpt = np.random.rand(width, height).astype(np.float32) * 5 + 0.5
     aif = np.random.rand(width, height, 3).astype(np.float32) * 255
-    indices = forward_model.precompute_indices(width, height)
-    defocus_stack = np.random.rand(len(globals.Df), width, height, 3).astype(np.float32) * 255
+    indices = forward_model.precompute_indices(width, height, MAX_KERNEL_SIZE)
+    defocus_stack = np.random.rand(len(dataset_params.Df), width, height, 3).astype(np.float32) * 255
 
-    old_window_size = globals.window_size
-    globals.window_size = 3
-
-    loss = section_search.objective_full(dpt, aif, defocus_stack, indices=indices, windowed=True)
-
-    globals.window_size = old_window_size
+    loss = section_search.objective_full(dpt, aif, defocus_stack, dataset_params, MAX_KERNEL_SIZE,
+                                         window_size=WINDOW_SIZE, indices=indices, windowed=True)
 
     assert loss.shape == (width, height)
     assert np.all(loss >= 0)
@@ -290,12 +287,13 @@ def test_grid_search_output_shapes():
     width, height = 10, 10
     gt_aif = np.random.rand(width, height, 3).astype(np.float32) * 255
     gt_depth = np.full((width, height), 2.0, dtype=np.float32)
-    indices = forward_model.precompute_indices(width, height)
-    defocus_stack = forward_model.forward(gt_depth, gt_aif, indices=indices)
+    indices = forward_model.precompute_indices(width, height, MAX_KERNEL_SIZE)
+    defocus_stack = forward_model.forward(gt_depth, gt_aif, dataset_params, MAX_KERNEL_SIZE, indices=indices)
 
     min_Z, max_Z, num_Z = 1.0, 5.0, 20
     depth_maps, Z, min_indices, all_losses = section_search.grid_search(
-        gt_aif, defocus_stack, indices=indices, min_Z=min_Z, max_Z=max_Z,
+        gt_aif, defocus_stack, dataset_params, MAX_KERNEL_SIZE,
+        indices=indices, min_Z=min_Z, max_Z=max_Z,
         num_Z=num_Z, verbose=False
     )
 
@@ -309,12 +307,13 @@ def test_grid_search_depth_range():
     width, height = 10, 10
     gt_aif = np.random.rand(width, height, 3).astype(np.float32) * 255
     gt_depth = np.full((width, height), 2.0, dtype=np.float32)
-    indices = forward_model.precompute_indices(width, height)
-    defocus_stack = forward_model.forward(gt_depth, gt_aif, indices=indices)
+    indices = forward_model.precompute_indices(width, height, MAX_KERNEL_SIZE)
+    defocus_stack = forward_model.forward(gt_depth, gt_aif, dataset_params, MAX_KERNEL_SIZE, indices=indices)
 
     min_Z, max_Z, num_Z = 1.0, 5.0, 20
     depth_maps, Z, min_indices, all_losses = section_search.grid_search(
-        gt_aif, defocus_stack, indices=indices, min_Z=min_Z, max_Z=max_Z,
+        gt_aif, defocus_stack, dataset_params, MAX_KERNEL_SIZE,
+        indices=indices, min_Z=min_Z, max_Z=max_Z,
         num_Z=num_Z, verbose=False
     )
 
@@ -331,12 +330,13 @@ def test_grid_search_finds_ground_truth():
     gt_depth_value = 2.5
     gt_aif = np.random.rand(width, height, 3).astype(np.float32) * 255
     gt_depth = np.full((width, height), gt_depth_value, dtype=np.float32)
-    indices = forward_model.precompute_indices(width, height)
-    defocus_stack = forward_model.forward(gt_depth, gt_aif, indices=indices)
+    indices = forward_model.precompute_indices(width, height, MAX_KERNEL_SIZE)
+    defocus_stack = forward_model.forward(gt_depth, gt_aif, dataset_params, MAX_KERNEL_SIZE, indices=indices)
 
     min_Z, max_Z, num_Z = 1.0, 5.0, 50
     depth_maps, Z, min_indices, all_losses = section_search.grid_search(
-        gt_aif, defocus_stack, indices=indices, min_Z=min_Z, max_Z=max_Z,
+        gt_aif, defocus_stack, dataset_params, MAX_KERNEL_SIZE,
+        indices=indices, min_Z=min_Z, max_Z=max_Z,
         num_Z=num_Z, verbose=False
     )
 
@@ -349,12 +349,13 @@ def test_grid_search_min_indices_valid():
     width, height = 8, 8
     gt_aif = np.random.rand(width, height, 3).astype(np.float32) * 255
     gt_depth = np.full((width, height), 2.0, dtype=np.float32)
-    indices = forward_model.precompute_indices(width, height)
-    defocus_stack = forward_model.forward(gt_depth, gt_aif, indices=indices)
+    indices = forward_model.precompute_indices(width, height, MAX_KERNEL_SIZE)
+    defocus_stack = forward_model.forward(gt_depth, gt_aif, dataset_params, MAX_KERNEL_SIZE, indices=indices)
 
     min_Z, max_Z, num_Z = 1.0, 5.0, 20
     depth_maps, Z, min_indices, all_losses = section_search.grid_search(
-        gt_aif, defocus_stack, indices=indices, min_Z=min_Z, max_Z=max_Z,
+        gt_aif, defocus_stack, dataset_params, MAX_KERNEL_SIZE,
+        indices=indices, min_Z=min_Z, max_Z=max_Z,
         num_Z=num_Z, verbose=False
     )
 
@@ -370,12 +371,13 @@ def test_grid_search_all_losses_consistent():
     width, height = 8, 8
     gt_aif = np.random.rand(width, height, 3).astype(np.float32) * 255
     gt_depth = np.full((width, height), 2.0, dtype=np.float32)
-    indices = forward_model.precompute_indices(width, height)
-    defocus_stack = forward_model.forward(gt_depth, gt_aif, indices=indices)
+    indices = forward_model.precompute_indices(width, height, MAX_KERNEL_SIZE)
+    defocus_stack = forward_model.forward(gt_depth, gt_aif, dataset_params, MAX_KERNEL_SIZE, indices=indices)
 
     min_Z, max_Z, num_Z = 1.0, 5.0, 15
     depth_maps, Z, min_indices, all_losses = section_search.grid_search(
-        gt_aif, defocus_stack, indices=indices, min_Z=min_Z, max_Z=max_Z,
+        gt_aif, defocus_stack, dataset_params, MAX_KERNEL_SIZE,
+        indices=indices, min_Z=min_Z, max_Z=max_Z,
         num_Z=num_Z, verbose=False
     )
 
@@ -391,19 +393,15 @@ def test_grid_search_windowed():
     width, height = 12, 12
     gt_aif = np.random.rand(width, height, 3).astype(np.float32) * 255
     gt_depth = np.full((width, height), 2.0, dtype=np.float32)
-    indices = forward_model.precompute_indices(width, height)
-    defocus_stack = forward_model.forward(gt_depth, gt_aif, indices=indices)
-
-    old_window_size = globals.window_size
-    globals.window_size = 3
+    indices = forward_model.precompute_indices(width, height, MAX_KERNEL_SIZE)
+    defocus_stack = forward_model.forward(gt_depth, gt_aif, dataset_params, MAX_KERNEL_SIZE, indices=indices)
 
     min_Z, max_Z, num_Z = 1.0, 5.0, 15
     depth_maps, Z, min_indices, all_losses = section_search.grid_search(
-        gt_aif, defocus_stack, indices=indices, min_Z=min_Z, max_Z=max_Z,
+        gt_aif, defocus_stack, dataset_params, MAX_KERNEL_SIZE,
+        window_size=WINDOW_SIZE, indices=indices, min_Z=min_Z, max_Z=max_Z,
         num_Z=num_Z, verbose=False, windowed=True
     )
-
-    globals.window_size = old_window_size
 
     assert depth_maps.shape == (width, height)
     assert all_losses.shape == (width, height, num_Z)
@@ -417,20 +415,21 @@ def test_golden_section_search_shape():
     width, height = 10, 10
     gt_aif = np.random.rand(width, height, 3).astype(np.float32) * 255
     gt_depth = np.full((width, height), 2.5, dtype=np.float32)
-    indices = forward_model.precompute_indices(width, height)
-    defocus_stack = forward_model.forward(gt_depth, gt_aif, indices=indices)
+    indices = forward_model.precompute_indices(width, height, MAX_KERNEL_SIZE)
+    defocus_stack = forward_model.forward(gt_depth, gt_aif, dataset_params, MAX_KERNEL_SIZE, indices=indices)
 
     # Run grid search first
     min_Z, max_Z, num_Z = 1.0, 5.0, 20
     _, Z, min_indices, _ = section_search.grid_search(
-        gt_aif, defocus_stack, indices=indices, min_Z=min_Z, max_Z=max_Z,
+        gt_aif, defocus_stack, dataset_params, MAX_KERNEL_SIZE,
+        indices=indices, min_Z=min_Z, max_Z=max_Z,
         num_Z=num_Z, verbose=False
     )
 
     # Refine with GSS
     refined_depth = section_search.golden_section_search(
-        Z, min_indices, gt_aif, defocus_stack, indices=indices,
-        window=2, tolerance=1e-3, max_iter=20, verbose=False
+        Z, min_indices, gt_aif, defocus_stack, dataset_params, MAX_KERNEL_SIZE,
+        indices=indices, window=2, tolerance=1e-3, max_iter=20, verbose=False
     )
 
     assert refined_depth.shape == (width, height)
@@ -442,19 +441,20 @@ def test_golden_section_search_refines_estimate():
     gt_depth_value = 2.5
     gt_aif = np.random.rand(width, height, 3).astype(np.float32) * 255
     gt_depth = np.full((width, height), gt_depth_value, dtype=np.float32)
-    indices = forward_model.precompute_indices(width, height)
-    defocus_stack = forward_model.forward(gt_depth, gt_aif, indices=indices)
+    indices = forward_model.precompute_indices(width, height, MAX_KERNEL_SIZE)
+    defocus_stack = forward_model.forward(gt_depth, gt_aif, dataset_params, MAX_KERNEL_SIZE, indices=indices)
 
     min_Z, max_Z, num_Z = 1.0, 5.0, 30
     _, Z, min_indices, _ = section_search.grid_search(
-        gt_aif, defocus_stack, indices=indices, min_Z=min_Z, max_Z=max_Z,
+        gt_aif, defocus_stack, dataset_params, MAX_KERNEL_SIZE,
+        indices=indices, min_Z=min_Z, max_Z=max_Z,
         num_Z=num_Z, verbose=False
     )
 
     window = 3
     refined_depth = section_search.golden_section_search(
-        Z, min_indices, gt_aif, defocus_stack, indices=indices,
-        window=window, tolerance=1e-4, max_iter=50, verbose=False
+        Z, min_indices, gt_aif, defocus_stack, dataset_params, MAX_KERNEL_SIZE,
+        indices=indices, window=window, tolerance=1e-4, max_iter=50, verbose=False
     )
 
     # Refined depth should be close to ground truth
@@ -467,19 +467,20 @@ def test_golden_section_search_convergence():
     gt_depth_value = 3.0
     gt_aif = np.random.rand(width, height, 3).astype(np.float32) * 255
     gt_depth = np.full((width, height), gt_depth_value, dtype=np.float32)
-    indices = forward_model.precompute_indices(width, height)
-    defocus_stack = forward_model.forward(gt_depth, gt_aif, indices=indices)
+    indices = forward_model.precompute_indices(width, height, MAX_KERNEL_SIZE)
+    defocus_stack = forward_model.forward(gt_depth, gt_aif, dataset_params, MAX_KERNEL_SIZE, indices=indices)
 
     min_Z, max_Z, num_Z = 2.0, 4.0, 15
     _, Z, min_indices, _ = section_search.grid_search(
-        gt_aif, defocus_stack, indices=indices, min_Z=min_Z, max_Z=max_Z,
+        gt_aif, defocus_stack, dataset_params, MAX_KERNEL_SIZE,
+        indices=indices, min_Z=min_Z, max_Z=max_Z,
         num_Z=num_Z, verbose=False
     )
 
     tolerance = 1e-4
     refined_depth = section_search.golden_section_search(
-        Z, min_indices, gt_aif, defocus_stack, indices=indices,
-        window=2, tolerance=tolerance, max_iter=100, verbose=False
+        Z, min_indices, gt_aif, defocus_stack, dataset_params, MAX_KERNEL_SIZE,
+        indices=indices, window=2, tolerance=tolerance, max_iter=100, verbose=False
     )
 
     # Result should be close to ground truth
@@ -491,12 +492,13 @@ def test_golden_section_search_with_last_dpt():
     width, height = 8, 8
     gt_aif = np.random.rand(width, height, 3).astype(np.float32) * 255
     gt_depth = np.full((width, height), 2.5, dtype=np.float32)
-    indices = forward_model.precompute_indices(width, height)
-    defocus_stack = forward_model.forward(gt_depth, gt_aif, indices=indices)
+    indices = forward_model.precompute_indices(width, height, MAX_KERNEL_SIZE)
+    defocus_stack = forward_model.forward(gt_depth, gt_aif, dataset_params, MAX_KERNEL_SIZE, indices=indices)
 
     min_Z, max_Z, num_Z = 1.0, 5.0, 20
     _, Z, min_indices, _ = section_search.grid_search(
-        gt_aif, defocus_stack, indices=indices, min_Z=min_Z, max_Z=max_Z,
+        gt_aif, defocus_stack, dataset_params, MAX_KERNEL_SIZE,
+        indices=indices, min_Z=min_Z, max_Z=max_Z,
         num_Z=num_Z, verbose=False
     )
 
@@ -504,8 +506,8 @@ def test_golden_section_search_with_last_dpt():
     last_dpt = gt_depth.copy()
 
     refined_depth = section_search.golden_section_search(
-        Z, min_indices, gt_aif, defocus_stack, indices=indices,
-        window=2, tolerance=1e-3, max_iter=30, verbose=False,
+        Z, min_indices, gt_aif, defocus_stack, dataset_params, MAX_KERNEL_SIZE,
+        indices=indices, window=2, tolerance=1e-3, max_iter=30, verbose=False,
         last_dpt=last_dpt
     )
 
@@ -519,8 +521,8 @@ def test_golden_section_search_custom_bracket():
     gt_depth_value = 2.5
     gt_aif = np.random.rand(width, height, 3).astype(np.float32) * 255
     gt_depth = np.full((width, height), gt_depth_value, dtype=np.float32)
-    indices = forward_model.precompute_indices(width, height)
-    defocus_stack = forward_model.forward(gt_depth, gt_aif, indices=indices)
+    indices = forward_model.precompute_indices(width, height, MAX_KERNEL_SIZE)
+    defocus_stack = forward_model.forward(gt_depth, gt_aif, dataset_params, MAX_KERNEL_SIZE, indices=indices)
 
     # Provide custom bracket around ground truth
     a = np.full((width, height), 2.0, dtype=np.float32)
@@ -531,8 +533,8 @@ def test_golden_section_search_custom_bracket():
     argmin_indices = np.zeros((width, height), dtype=int)  # Dummy
 
     refined_depth = section_search.golden_section_search(
-        Z, argmin_indices, gt_aif, defocus_stack, indices=indices,
-        window=2, tolerance=1e-4, max_iter=50, verbose=False,
+        Z, argmin_indices, gt_aif, defocus_stack, dataset_params, MAX_KERNEL_SIZE,
+        indices=indices, window=2, tolerance=1e-4, max_iter=50, verbose=False,
         a_b_init=(a, b)
     )
 
@@ -547,19 +549,20 @@ def test_golden_section_search_partial_convergence():
     width, height = 8, 8
     gt_aif = np.random.rand(width, height, 3).astype(np.float32) * 255
     gt_depth = np.full((width, height), 2.5, dtype=np.float32)
-    indices = forward_model.precompute_indices(width, height)
-    defocus_stack = forward_model.forward(gt_depth, gt_aif, indices=indices)
+    indices = forward_model.precompute_indices(width, height, MAX_KERNEL_SIZE)
+    defocus_stack = forward_model.forward(gt_depth, gt_aif, dataset_params, MAX_KERNEL_SIZE, indices=indices)
 
     min_Z, max_Z, num_Z = 1.0, 5.0, 20
     _, Z, min_indices, _ = section_search.grid_search(
-        gt_aif, defocus_stack, indices=indices, min_Z=min_Z, max_Z=max_Z,
+        gt_aif, defocus_stack, dataset_params, MAX_KERNEL_SIZE,
+        indices=indices, min_Z=min_Z, max_Z=max_Z,
         num_Z=num_Z, verbose=False
     )
 
     # Allow 10% of pixels to not converge
     refined_depth = section_search.golden_section_search(
-        Z, min_indices, gt_aif, defocus_stack, indices=indices,
-        window=2, tolerance=1e-4, convergence_error=0.1, max_iter=10, verbose=False
+        Z, min_indices, gt_aif, defocus_stack, dataset_params, MAX_KERNEL_SIZE,
+        indices=indices, window=2, tolerance=1e-4, convergence_error=0.1, max_iter=10, verbose=False
     )
 
     assert refined_depth.shape == (width, height)
@@ -569,24 +572,21 @@ def test_golden_section_search_windowed():
     width, height = 10, 10
     gt_aif = np.random.rand(width, height, 3).astype(np.float32) * 255
     gt_depth = np.full((width, height), 2.5, dtype=np.float32)
-    indices = forward_model.precompute_indices(width, height)
-    defocus_stack = forward_model.forward(gt_depth, gt_aif, indices=indices)
-
-    old_window_size = globals.window_size
-    globals.window_size = 3
+    indices = forward_model.precompute_indices(width, height, MAX_KERNEL_SIZE)
+    defocus_stack = forward_model.forward(gt_depth, gt_aif, dataset_params, MAX_KERNEL_SIZE, indices=indices)
 
     min_Z, max_Z, num_Z = 1.0, 5.0, 20
     _, Z, min_indices, _ = section_search.grid_search(
-        gt_aif, defocus_stack, indices=indices, min_Z=min_Z, max_Z=max_Z,
+        gt_aif, defocus_stack, dataset_params, MAX_KERNEL_SIZE,
+        window_size=WINDOW_SIZE, indices=indices, min_Z=min_Z, max_Z=max_Z,
         num_Z=num_Z, verbose=False, windowed=True
     )
 
     refined_depth = section_search.golden_section_search(
-        Z, min_indices, gt_aif, defocus_stack, indices=indices,
+        Z, min_indices, gt_aif, defocus_stack, dataset_params, MAX_KERNEL_SIZE,
+        window_size=WINDOW_SIZE, indices=indices,
         window=2, tolerance=1e-3, max_iter=30, verbose=False, windowed=True
     )
-
-    globals.window_size = old_window_size
 
     assert refined_depth.shape == (width, height)
 
@@ -601,13 +601,14 @@ def test_full_pipeline_grid_plus_gss():
     gt_depth_value = 2.3
     gt_aif = np.random.rand(width, height, 3).astype(np.float32) * 255
     gt_depth = np.full((width, height), gt_depth_value, dtype=np.float32)
-    indices = forward_model.precompute_indices(width, height)
-    defocus_stack = forward_model.forward(gt_depth, gt_aif, indices=indices)
+    indices = forward_model.precompute_indices(width, height, MAX_KERNEL_SIZE)
+    defocus_stack = forward_model.forward(gt_depth, gt_aif, dataset_params, MAX_KERNEL_SIZE, indices=indices)
 
     # Coarse grid search
     min_Z, max_Z, num_Z = 1.0, 4.0, 15
     grid_depth, Z, min_indices, all_losses = section_search.grid_search(
-        gt_aif, defocus_stack, indices=indices, min_Z=min_Z, max_Z=max_Z,
+        gt_aif, defocus_stack, dataset_params, MAX_KERNEL_SIZE,
+        indices=indices, min_Z=min_Z, max_Z=max_Z,
         num_Z=num_Z, verbose=False
     )
 
@@ -617,8 +618,8 @@ def test_full_pipeline_grid_plus_gss():
 
     # Refine with GSS
     refined_depth = section_search.golden_section_search(
-        Z, min_indices, gt_aif, defocus_stack, indices=indices,
-        window=2, tolerance=1e-4, max_iter=50, verbose=False
+        Z, min_indices, gt_aif, defocus_stack, dataset_params, MAX_KERNEL_SIZE,
+        indices=indices, window=2, tolerance=1e-4, max_iter=50, verbose=False
     )
 
     # Refined should be better
@@ -631,13 +632,14 @@ def test_varied_depth_map():
     rng = np.random.default_rng(42)
     gt_depth = rng.uniform(1.5, 3.5, (width, height)).astype(np.float32)
     gt_aif = rng.uniform(0, 255, (width, height, 3)).astype(np.float32)
-    indices = forward_model.precompute_indices(width, height)
-    defocus_stack = forward_model.forward(gt_depth, gt_aif, indices=indices)
+    indices = forward_model.precompute_indices(width, height, MAX_KERNEL_SIZE)
+    defocus_stack = forward_model.forward(gt_depth, gt_aif, dataset_params, MAX_KERNEL_SIZE, indices=indices)
 
     # Grid search
     min_Z, max_Z, num_Z = 1.0, 4.0, 20
     grid_depth, Z, min_indices, _ = section_search.grid_search(
-        gt_aif, defocus_stack, indices=indices, min_Z=min_Z, max_Z=max_Z,
+        gt_aif, defocus_stack, dataset_params, MAX_KERNEL_SIZE,
+        indices=indices, min_Z=min_Z, max_Z=max_Z,
         num_Z=num_Z, verbose=False
     )
 
@@ -647,8 +649,8 @@ def test_varied_depth_map():
 
     # Refine
     refined_depth = section_search.golden_section_search(
-        Z, min_indices, gt_aif, defocus_stack, indices=indices,
-        window=2, tolerance=1e-3, max_iter=30, verbose=False
+        Z, min_indices, gt_aif, defocus_stack, dataset_params, MAX_KERNEL_SIZE,
+        indices=indices, window=2, tolerance=1e-3, max_iter=30, verbose=False
     )
 
     # Refinement should improve accuracy

@@ -3,18 +3,15 @@
 Three datasets are supported:
 
 NYUv2
-    Indoor RGB-D images.  Camera parameters are fixed; call
-    ``globals.init_NYUv2()`` before using these loaders.
+    Indoor RGB-D images.  Camera parameters are fixed in ``DatasetParams.for_NYUv2()``.
 
 Make3D
     Outdoor images with LIDAR depth.  Camera parameters (focal length,
-    aperture, pixel size) are read from EXIF and set on ``globals`` by
-    the loader.
+    aperture, pixel size) are read from EXIF and returned by the loader.
 
 MobileDepth (mobile phone focal stacks)
     Phone-captured focal stacks with per-scene calibration files.
-    Camera parameters and focus distances are set on ``globals`` by the
-    loader.
+    Camera parameters and focus distances are returned by the loader.
 """
 import os
 
@@ -26,8 +23,19 @@ import cv2
 import exifread
 from scipy.io import loadmat
 
-import globals
 import utils
+
+# Resolve relative data_dir paths against this module's directory (dfd/)
+# so that data_dir='data' always means dfd/data/ regardless of caller cwd.
+_MODULE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+
+def _resolve_data_dir(data_dir):
+    """Return *data_dir* as-is if absolute, else resolve relative to dfd/."""
+    if os.path.isabs(data_dir):
+        return data_dir
+    return os.path.join(_MODULE_DIR, data_dir)
+
 
 # ---------------------------------------------------------------------------
 # NYUv2
@@ -95,9 +103,6 @@ def load_NYUv2_aif(path_to_file, resize_frac=2):
 def load_single_sample_NYUv2(data_dir='data', sample='0045', set='train', res='half'):
     """Load a single NYUv2 RGB-D sample.
 
-    If fs=10, sets globals.Df to the 10-plane focus distance array as a
-    side effect.
-
     Parameters
     ----------
     data_dir : str
@@ -118,7 +123,7 @@ def load_single_sample_NYUv2(data_dir='data', sample='0045', set='train', res='h
     """
     assert res in ('full', 'half')
 
-    data_path = os.path.join(os.getcwd(), data_dir, 'NYUv2')
+    data_path = os.path.join(_resolve_data_dir(data_dir), 'NYUv2')
     resize_frac = 2 if res == 'half' else 1
 
     dpt = load_NYUv2_dpt(os.path.join(data_path, set + '_depth', sample + '.tiff'), resize_frac=resize_frac)
@@ -134,27 +139,35 @@ def load_single_sample_NYUv2(data_dir='data', sample='0045', set='train', res='h
 # ---------------------------------------------------------------------------
 
 def _load_make3d_camera_params(img_filename):
-    """Read EXIF metadata from a Make3D image; sets globals.f and globals.D.
+    """Read EXIF metadata from a Make3D image.
 
     Parameters
     ----------
     img_filename : str
         Path to the Make3D JPEG image.
+
+    Returns
+    -------
+    f : float
+        Focal length in metres.
+    D : float
+        Aperture diameter in metres.
     """
-    with open(img_filename, 'rb') as f:
-        tags = exifread.process_file(f)
+    with open(img_filename, 'rb') as fh:
+        tags = exifread.process_file(fh)
     focal_length_mm = utils.exif_to_float(tags.get("EXIF FocalLength"))
-    globals.f = focal_length_mm * 1e-3
+    f = focal_length_mm * 1e-3
     f_number = utils.exif_to_float(tags.get("EXIF FNumber"))
-    globals.D = globals.f / f_number
+    D = f / f_number
+    return f, D
 
 
 def _load_make3d_image(img_filename):
-    """Load and resize a Make3D RGB image to (460, 345); sets globals.ps.
+    """Load and resize a Make3D RGB image to (460, 345).
 
     The target resolution of (460, 345) follows Saxena et al.  Pixel size
-    (globals.ps) is derived from the Canon PowerShot S40 sensor width and
-    the ratio of original to resized pixel count.
+    is derived from the Canon PowerShot S40 sensor width and the ratio of
+    original to resized pixel count.
 
     Parameters
     ----------
@@ -165,6 +178,8 @@ def _load_make3d_image(img_filename):
     -------
     aif : ndarray, shape (460, 345, 3)
         RGB image [0, 255], dtype float32.
+    ps : float
+        Estimated pixel size in metres.
     """
     # one image in the dataset requires EXIF-based rotation correction
     if os.path.basename(img_filename) == "img-op29-p-295t000.jpg":
@@ -185,13 +200,13 @@ def _load_make3d_image(img_filename):
         preserve_range=True,
     )
 
-    # loosely estimate based on 
+    # loosely estimate based on
     # Canon PowerShot S40: 1/1.8" sensor (~7.11 x 5.33 mm)
     sensor_width_m = 7.11e-3
-    globals.ps = sensor_width_m / original_width * (original_width / aif.shape[0])
-    globals.ps *= 0.01 # scaling factor that performed well in practice
+    ps = sensor_width_m / original_width * (original_width / aif.shape[0])
+    ps *= 0.01 # scaling factor that performed well in practice
 
-    return aif
+    return aif, ps
 
 
 def _load_make3d_depth(dpt_filename):
@@ -215,16 +230,19 @@ def _load_make3d_depth(dpt_filename):
     return dpt[:, :, 3]
 
 
-def load_single_sample_Make3D(img_name="img-math7-p-282t0.jpg", split='train', data_dir="data"):
+def load_single_sample_Make3D(img_name, dataset_params, split='train', data_dir="data"):
     """Load a single Make3D RGB image and its ground-truth depth map.
 
-    Sets globals.f, globals.D, and globals.ps from EXIF data and image
-    dimensions as a side effect.
+    Camera parameters (f, D, ps) are read from EXIF and image dimensions
+    and set on *dataset_params* in place.
 
     Parameters
     ----------
     img_name : str
         JPEG filename of the image (e.g. 'img-math7-p-282t0.jpg').
+    dataset_params : DatasetParams
+        Camera/scene parameters; ``f``, ``D``, and ``ps`` are populated
+        from EXIF data and image dimensions.
     data_dir : str
         Root data directory containing the 'Make3D/' subdirectory.
     split : str
@@ -241,13 +259,14 @@ def load_single_sample_Make3D(img_name="img-math7-p-282t0.jpg", split='train', d
     img_subdir = 'Test134Img' if split == 'test' else 'Train400Img'
     dpt_subdir = 'Test134Depth' if split == 'test' else 'Train400Depth'
 
-    img_filename = os.path.join(data_dir, 'Make3D', img_subdir, img_name)
+    resolved = _resolve_data_dir(data_dir)
+    img_filename = os.path.join(resolved, 'Make3D', img_subdir, img_name)
 
-    _load_make3d_camera_params(img_filename)
-    aif = _load_make3d_image(img_filename) #* 255.
+    dataset_params.f, dataset_params.D = _load_make3d_camera_params(img_filename)
+    aif, dataset_params.ps = _load_make3d_image(img_filename) #* 255.
 
     part = img_name.split("img-")[1].split(".jpg")[0]
-    dpt_filename = os.path.join(data_dir, 'Make3D', dpt_subdir, "depth_sph_corr-" + part + ".mat")
+    dpt_filename = os.path.join(resolved, 'Make3D', dpt_subdir, "depth_sph_corr-" + part + ".mat")
     dpt = _load_make3d_depth(dpt_filename)
 
     dpt = skimage.transform.resize(
@@ -351,7 +370,7 @@ def _load_mobile_depth_focal_stack(example_dir, resize_frac):
 
 
 def _load_mobile_depth_calibration(example_name, data_path):
-    """Read the per-scene calibration file; sets globals.Df, globals.f, globals.D.
+    """Read the per-scene calibration file.
 
     The calibration file lists one ``focal_depth aperture`` pair per line,
     with the focal length as the final line.
@@ -368,12 +387,18 @@ def _load_mobile_depth_calibration(example_name, data_path):
     calib_dir : str
         Path to the resolved calibration directory, used to locate the depth
         and scale result files.
+    Df : ndarray
+        Focus distances.
+    f : float
+        Focal length.
+    D : float
+        Aperture diameter.
     """
     calib_name = _MOBILE_DEPTH_CALIB_NAME_MAP.get(example_name, example_name)
     calib_dir = os.path.join(data_path, 'photos-calibration-results', 'calibration', calib_name)
 
-    with open(os.path.join(calib_dir, "calibrated.txt"), "r") as f:
-        lines = [line.strip() for line in f if line.strip()]
+    with open(os.path.join(calib_dir, "calibrated.txt"), "r") as fh:
+        lines = [line.strip() for line in fh if line.strip()]
 
     # last line is focal length; preceding lines are focal_depth / aperture pairs
     focal_length = float(lines[-1])
@@ -386,26 +411,31 @@ def _load_mobile_depth_calibration(example_name, data_path):
 
     assert len(set(apertures)) == 1, "Expected consistent aperture across all focal planes"
 
-    globals.Df = np.array(focal_depths, dtype=np.float32)  # unitless
-    globals.f = focal_length                                # unitless
-    globals.D = set(apertures).pop()                        # unitless, confirmed by Supasorn
+    Df = np.array(focal_depths, dtype=np.float32)  # unitless
+    f = focal_length                                # unitless
+    D = set(apertures).pop()                        # unitless, confirmed by Supasorn
 
-    return calib_dir
+    return calib_dir, Df, f, D
 
 
-def load_single_sample_MobileDepth(example_name="keyboard", res="half", data_dir="data"):
+def load_single_sample_MobileDepth(example_name, dataset_params, res="half", data_dir="data"):
     """Load a MobileDepth focal stack with calibration data and depth result.
 
-    Sets globals.Df, globals.f, and globals.D from the per-scene calibration
-    file as a side effect.
+    Camera parameters (Df, f, D) from the per-scene calibration file are
+    set on *dataset_params* in place.
 
     Parameters
     ----------
     example_name : str
         Scene name.  Must be one of: keyboard, bottles, fruits, metals,
         plants, telephone, window, largemotion, smallmotion, zeromotion, balls.
+    dataset_params : DatasetParams
+        Camera/scene parameters; ``Df``, ``f``, and ``D`` are populated
+        from calibration data.
     res : str
         Resolution: 'full' or 'half' (default).
+    data_dir : str
+        Root data directory.
 
     Returns
     -------
@@ -420,27 +450,30 @@ def load_single_sample_MobileDepth(example_name="keyboard", res="half", data_dir
     assert example_name in _MOBILE_DEPTH_VALID_EXAMPLES
     assert res in ('full', 'half')
 
-    data_path = os.path.join(os.getcwd(), data_dir, 'MobileDepth')
+    data_path = os.path.join(_resolve_data_dir(data_dir), 'MobileDepth')
     focal_stack_dir = os.path.join(data_path, 'aligned-focus-stack', 'Aligned')
 
     example_dir = _find_mobile_depth_example_dir(focal_stack_dir, example_name)
     resize_frac = 2 if res == 'half' else 1
     defocus_stack = _load_mobile_depth_focal_stack(example_dir, resize_frac)
 
-    calib_dir = _load_mobile_depth_calibration(example_name, data_path)
-    
-    order = np.argsort(globals.Df)
-    globals.Df = globals.Df[order]
+    calib_dir, Df, f, D = _load_mobile_depth_calibration(example_name, data_path)
+
+    order = np.argsort(Df)
+    dataset_params.Df = Df[order]
+    dataset_params.f = f
+    dataset_params.D = D
     defocus_stack = defocus_stack[order]
 
     dpt_result = utils.read_bin_file(os.path.join(calib_dir, "depth_var.bin")).astype(np.float32)
+    dpt_result = np.rot90(
+        skimage.transform.resize(dpt_result, (dpt_result.shape[0] // 2, dpt_result.shape[1] // 2), anti_aliasing=True) if res == 'half' else dpt_result
+    , k=-1)
     scale_mat = utils.read_bin_file(os.path.join(calib_dir, "scaleMatrix.bin"))
 
     # Rotate and resize to half
     defocus_stack = np.stack([
-        np.rot90(
-            skimage.transform.resize(img, (img.shape[0] // 2, img.shape[1] // 2), anti_aliasing=True) if res == 'half' else img
-        , k=-1)
+        np.rot90(img, k=-1)
         for img in defocus_stack
     ], axis=0)
 
@@ -452,20 +485,13 @@ def load_single_sample_MobileDepth(example_name="keyboard", res="half", data_dir
 # Example image (NYUv2 tutorial sample)
 # ---------------------------------------------------------------------------
 
-def load_example_image(fs=5, data_dir='data', res='half'):
-    """Load the fixed NYUv2 example (sample 0045) with its ground-truth defocus stack.
+def load_example_image(data_dir='data', res='half'):
+    """Load the fixed NYUv2 example.
 
     Intended for tutorials and notebooks demonstrating the full pipeline.
-    Unlike load_single_sample, this function also returns the pre-rendered
-    ground-truth focal stack stored in the NYUv2_single<fs> directory.
-
-    If fs=10, sets globals.Df to the 10-plane focus distance array as a
-    side effect.
 
     Parameters
     ----------
-    fs : int
-        Focal stack size: 5 or 10.
     data_dir : str
         Root data directory (relative to cwd), expected to contain
         'NYUv2_single<fs>/'.
@@ -477,29 +503,15 @@ def load_example_image(fs=5, data_dir='data', res='half'):
     aif : ndarray, shape (width, height, 3)
         All-in-focus image in [0, 255] range.
     dpt : ndarray, shape (width, height)
-        Depth map in metres.
-    gt_defocus_stack : list of ndarray
-        Ground-truth defocus stack; each frame has shape (width, height, 3)
-        with pixel values in [0, 255].
+        Depth map in meters.
     """
-    assert fs in (5, 10)
     assert res in ('full', 'half')
 
-    ext = str(fs)
-    if fs == 10:
-        globals.Df = np.array([0.5, 1, 1.25, 1.5, 1.75, 2, 2.5, 3, 4, 6], dtype=np.float32)  # m
-    if res == 'half':
-        ext += '_halfres'
-
-    data_path = os.path.join(os.getcwd(), data_dir, 'NYUv2_single' + str(fs))
+    data_path = os.path.join(_resolve_data_dir(data_dir), 'example')
     img_name = '0045.png'
     resize_frac = 2 if res == 'half' else 1
 
-    dpt = load_NYUv2_dpt(os.path.join(data_path, 'test_depth', img_name), resize_frac=resize_frac)
-    aif = load_NYUv2_aif(os.path.join(data_path, 'test_rgb', img_name), resize_frac=resize_frac)
+    dpt = load_NYUv2_dpt(os.path.join(data_path, 'depth', img_name), resize_frac=resize_frac)
+    aif = load_NYUv2_aif(os.path.join(data_path, 'rgb', img_name), resize_frac=resize_frac)
 
-    files = sorted(os.listdir(os.path.join(data_path, 'test_fs' + ext)))
-    gt_defocus_stack = [cv2.cvtColor(cv2.imread(os.path.join(data_path, 'test_fs' + ext, f)), cv2.COLOR_BGR2RGB) for f in files]
-    assert len(gt_defocus_stack) == fs
-
-    return aif, dpt, gt_defocus_stack
+    return aif, dpt

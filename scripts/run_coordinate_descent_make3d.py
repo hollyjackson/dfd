@@ -25,10 +25,10 @@ import numpy as np
 
 import utils
 import forward_model
-import globals
 import coordinate_descent
 import initialization
 import dataset_loader
+from dataset_params import DatasetParams
 from config import MAKE3D
 
 
@@ -46,30 +46,25 @@ def load_and_generate_defocus_stack(img_name, split, config):
         config: Configuration object containing dataset parameters
 
     Returns:
-        Tuple of (defocus_stack, gt_aif, gt_dpt) where:
-            - defocus_stack: Synthetic defocus stack
-            - gt_aif: Ground truth all-in-focus image
-            - gt_dpt: Ground truth depth map
+        Tuple of (defocus_stack, gt_aif, gt_dpt, dataset_params, max_kernel_size)
     """
-    # Initialize dataset-specific globals
-    globals.init_Make3D()
-    globals.window_size = config.window_size
+    dataset_params = DatasetParams.for_Make3D()
 
-    # Load ground truth AIF and depth
+    # Load ground truth AIF and depth (sets f, D, ps on dataset_params)
     gt_aif, gt_dpt = dataset_loader.load_single_sample_Make3D(
-        img_name=img_name, split=split, data_dir=config.data_dir
+        img_name=img_name, dataset_params=dataset_params,
+        split=split, data_dir=config.data_dir
     )
 
     # Set adaptive kernel size based on image dimensions
     width, height, _ = gt_aif.shape
     max_kernel_size = utils.kernel_size_heuristic(width, height)
     print(f'Adaptive kernel size set to {max_kernel_size}')
-    utils.update_max_kernel_size(max_kernel_size)
 
     # Generate synthetic defocus stack using forward model
-    defocus_stack = forward_model.forward(gt_dpt, gt_aif)
+    defocus_stack = forward_model.forward(gt_dpt, gt_aif, dataset_params, max_kernel_size)
 
-    return defocus_stack, gt_aif, gt_dpt
+    return defocus_stack, gt_aif, gt_dpt, dataset_params, max_kernel_size
 
 
 
@@ -97,7 +92,7 @@ def main():
 
     # Load ground truth and generate defocus stack
     print("Loading ground truth and generating defocus stack...")
-    defocus_stack, gt_aif, gt_dpt = load_and_generate_defocus_stack(img_name, split, config)
+    defocus_stack, gt_aif, gt_dpt, dataset_params, max_kernel_size = load_and_generate_defocus_stack(img_name, split, config)
 
     # Compute AIF initialization
     print("Computing AIF initialization...")
@@ -111,6 +106,8 @@ def main():
     print("Running coordinate descent optimization...")
     dpt, aif, _, exp_folder = coordinate_descent.coordinate_descent(
         defocus_stack,
+        dataset_params,
+        max_kernel_size,
         experiment_folder=config.experiment_folder,
         show_plots=config.show_plots,
         save_plots=config.save_plots,
@@ -122,7 +119,8 @@ def main():
         T_0=config.t_0,
         alpha=config.alpha,
         verbose=config.verbose,
-        windowed_mse=config.use_windowed_mse
+        windowed_mse=config.use_windowed_mse,
+        window_size=config.window_size
     )
 
     # Save final results

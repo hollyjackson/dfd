@@ -12,9 +12,6 @@ from dataclasses import dataclass
 class BaseConfig:
     """Base configuration with common default values."""
 
-    # Image parameters
-    image_range: float = 255.0
-
     # AIF initialization parameters
     aif_lambda: float = 0.05
     aif_sharpness_measure: str = 'sobel_grad'

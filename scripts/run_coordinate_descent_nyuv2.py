@@ -25,10 +25,10 @@ import numpy as np
 
 import utils
 import forward_model
-import globals
 import coordinate_descent
 import initialization
 import dataset_loader
+from dataset_params import DatasetParams
 from config import NYUV2
 
 
@@ -46,13 +46,9 @@ def load_and_generate_defocus_stack(image_number, split, config):
         config: Configuration object containing dataset parameters
 
     Returns:
-        Tuple of (defocus_stack, gt_aif, gt_dpt) where:
-            - defocus_stack: Synthetic defocus stack
-            - gt_aif: Ground truth all-in-focus image
-            - gt_dpt: Ground truth depth map
+        Tuple of (defocus_stack, gt_aif, gt_dpt, dataset_params, max_kernel_size)
     """
-    # Initialize dataset-specific globals
-    globals.init_NYUv2()
+    dataset_params = DatasetParams.for_NYUv2()
 
     # Load ground truth AIF and depth
     gt_aif, gt_dpt = dataset_loader.load_single_sample_NYUv2(
@@ -64,12 +60,11 @@ def load_and_generate_defocus_stack(image_number, split, config):
     width, height = gt_dpt.shape
     max_kernel_size = utils.kernel_size_heuristic(width, height)
     print(f'Adaptive kernel size set to {max_kernel_size}')
-    utils.update_max_kernel_size(max_kernel_size)
 
     # Generate synthetic defocus stack using forward model
-    defocus_stack = forward_model.forward(gt_dpt, gt_aif)
+    defocus_stack = forward_model.forward(gt_dpt, gt_aif, dataset_params, max_kernel_size)
 
-    return defocus_stack, gt_aif, gt_dpt
+    return defocus_stack, gt_aif, gt_dpt, dataset_params, max_kernel_size
 
 
 
@@ -97,7 +92,7 @@ def main():
 
     # Load ground truth and generate defocus stack
     print("Loading ground truth and generating defocus stack...")
-    defocus_stack, gt_aif, gt_dpt = load_and_generate_defocus_stack(image_number, split, config)
+    defocus_stack, gt_aif, gt_dpt, dataset_params, max_kernel_size = load_and_generate_defocus_stack(image_number, split, config)
 
     # Compute AIF initialization
     print("Computing AIF initialization...")
@@ -111,6 +106,8 @@ def main():
     print("Running coordinate descent optimization...")
     dpt, aif, _, exp_folder = coordinate_descent.coordinate_descent(
         defocus_stack,
+        dataset_params,
+        max_kernel_size,
         experiment_folder=config.experiment_folder,
         show_plots=config.show_plots,
         save_plots=config.save_plots,

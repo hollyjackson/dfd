@@ -98,7 +98,8 @@ def approx_Lipschitz_constant(A, A_T, iters=15):
 # Main solver
 # ---------------------------------------------------------------------------
 
-def bounded_fista_3d(dpt, defocus_stack, IMAGE_RANGE, indices=None, template_A_stack=None,
+def bounded_fista_3d(dpt, defocus_stack, dataset_params, max_kernel_size,
+                     indices=None, template_A_stack=None,
                      tol=1e-6, maxiter=1000, verbose=True):
     """Solve the bounded least-squares AIF sub-problem via FISTA.
 
@@ -108,8 +109,10 @@ def bounded_fista_3d(dpt, defocus_stack, IMAGE_RANGE, indices=None, template_A_s
         Current depth map estimate (held fixed during this call).
     defocus_stack : list of ndarray, each shape (H, W, 3)
         Observed focal stack.
-    IMAGE_RANGE : float
-        Upper bound for pixel values (e.g. 255.0 or 1.0).
+    dataset_params : DatasetParams
+        Camera/scene parameters (passed to ``forward_model``).
+    max_kernel_size : int
+        Side length of the square kernel window (must be odd).
     indices : tuple or None
         Pre-computed sparse index arrays from ``forward_model.precompute_indices``.
         Computed from *dpt* if not provided.
@@ -133,12 +136,17 @@ def bounded_fista_3d(dpt, defocus_stack, IMAGE_RANGE, indices=None, template_A_s
 
     width, height = dpt.shape
     if indices is None:
-        u, v, row, col, mask = forward_model.precompute_indices(width, height)
+        u, v, row, col, mask = forward_model.precompute_indices(width, height, max_kernel_size)
     else:
         u, v, row, col, mask = indices
 
-    A_stack = forward_model.buildA(dpt, u, v, row, col, mask, template_A_stack=template_A_stack)
+    A_stack = forward_model.buildA(dpt, u, v, row, col, mask, dataset_params,
+                                   template_A_stack=template_A_stack)
     b_red_stack, b_green_stack, b_blue_stack = buildb(defocus_stack)
+
+    IMAGE_RANGE = 255.  # default assumes [0-255] range
+    if defocus_stack.max() <= 1.5:  # check if images are normalized to [0-1]
+        IMAGE_RANGE = 1.
 
     # Stack all focal images into one tall sparse system A x = b
     A = scipy.sparse.vstack(A_stack).tocsr(copy=False)

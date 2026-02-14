@@ -1,14 +1,13 @@
 import numpy as np
 import scipy.sparse
 
-import globals
 import forward_model
 import nesterov
 import dataset_loader
+from dataset_params import DatasetParams
 
-# Set up camera/sensor globals (provides f, D, Df, ps, thresh, MAX_KERNEL_SIZE)
-globals.init_NYUv2()
-globals.MAX_KERNEL_SIZE = 7
+dataset_params = DatasetParams.for_NYUv2()
+MAX_KERNEL_SIZE = 7
 
 
 # ---------------------------------------------------------------------------
@@ -24,10 +23,10 @@ def _make_tiny_case(width=8, height=8, seed=0):
     """Build a small synthetic (dpt, defocus_stack, indices) tuple via the forward model."""
     rng = np.random.default_rng(seed)
     # Constant depth at the first focus distance
-    dpt = np.full((width, height), globals.Df[0], dtype=np.float32)
+    dpt = np.full((width, height), dataset_params.Df[0], dtype=np.float32)
     aif = rng.uniform(0, 255, (width, height, 3)).astype(np.float32)
-    indices = forward_model.precompute_indices(width, height)
-    defocus_stack = forward_model.forward(dpt, aif, indices=indices)
+    indices = forward_model.precompute_indices(width, height, MAX_KERNEL_SIZE)
+    defocus_stack = forward_model.forward(dpt, aif, dataset_params, MAX_KERNEL_SIZE, indices=indices)
     return dpt, aif, defocus_stack, indices
 
 
@@ -123,7 +122,9 @@ def test_approx_matches_exact_small_matrix():
 def test_bounded_fista_output_shape():
     dpt, _, defocus_stack, indices = _make_tiny_case(width=8, height=8)
     result = nesterov.bounded_fista_3d(
-        dpt, defocus_stack, IMAGE_RANGE=255.0, indices=indices, verbose=False
+        dpt, defocus_stack,
+        dataset_params=dataset_params, max_kernel_size=MAX_KERNEL_SIZE,
+        indices=indices, verbose=False
     )
     assert result.shape == (8, 8, 3)
 
@@ -131,18 +132,22 @@ def test_bounded_fista_output_shape():
 def test_bounded_fista_output_in_range():
     dpt, _, defocus_stack, indices = _make_tiny_case(width=8, height=8)
     result = nesterov.bounded_fista_3d(
-        dpt, defocus_stack, IMAGE_RANGE=255.0, indices=indices, verbose=False
+        dpt, defocus_stack,
+        dataset_params=dataset_params, max_kernel_size=MAX_KERNEL_SIZE,
+        indices=indices, verbose=False
     )
     assert result.min() >= 0.0
     assert result.max() <= 255.0
 
 
 def test_bounded_fista_unit_image_range():
-    # IMAGE_RANGE=1.0 (normalised images) should clip to [0, 1]
+    # Normalised [0,1] images should auto-detect IMAGE_RANGE=1.0 and clip to [0, 1]
     dpt, _, defocus_stack, indices = _make_tiny_case(width=8, height=8)
     defocus_stack_norm = defocus_stack / 255.0
     result = nesterov.bounded_fista_3d(
-        dpt, defocus_stack_norm, IMAGE_RANGE=1.0, indices=indices, verbose=False
+        dpt, defocus_stack_norm,
+        dataset_params=dataset_params, max_kernel_size=MAX_KERNEL_SIZE,
+        indices=indices, verbose=False
     )
     assert result.min() >= 0.0
     assert result.max() <= 1.0
@@ -152,13 +157,14 @@ def test_bounded_fista_ground_truth_depth():
     # Given ground-truth depth, FISTA should recover the AIF on interior pixels.
     # Border pixels are excluded: the forward model truncates the blur kernel at
     # image boundaries, making those pixels poorly conditioned in the inverse problem.
-    gt_aif, gt_dpt, _ = dataset_loader.load_example_image(fs=5, res='half')
-    defocus_stack = forward_model.forward(gt_dpt, gt_aif)
+    gt_aif, gt_dpt = dataset_loader.load_example_image(res='half')
+    defocus_stack = forward_model.forward(gt_dpt, gt_aif, dataset_params, MAX_KERNEL_SIZE)
     result = nesterov.bounded_fista_3d(
-        gt_dpt, defocus_stack, IMAGE_RANGE=255.0,
+        gt_dpt, defocus_stack,
+        dataset_params=dataset_params, max_kernel_size=MAX_KERNEL_SIZE,
         tol=1e-8, maxiter=500, verbose=True
     )
-    pad = globals.MAX_KERNEL_SIZE // 2
+    pad = MAX_KERNEL_SIZE // 2
     mse = np.mean((result[pad:-pad, pad:-pad] - gt_aif[pad:-pad, pad:-pad]) ** 2)
     print(f"MSE: {mse}")
     print(f"Result range: [{result.min()}, {result.max()}]")
@@ -170,13 +176,14 @@ def test_bounded_fista_zero_observations():
     # b=0 => min ||Ax||² s.t. 0 <= x <= 255 has the unique solution x=0
     # (x=0 is feasible and achieves loss=0, which is the global minimum)
     width, height = 6, 6
-    dpt = np.full((width, height), globals.Df[0], dtype=np.float32)
-    num_focal = len(globals.Df)
-    defocus_stack = [np.zeros((width, height, 3), dtype=np.float32)] * num_focal
-    indices = forward_model.precompute_indices(width, height)
+    dpt = np.full((width, height), dataset_params.Df[0], dtype=np.float32)
+    fs = len(dataset_params.Df)
+    defocus_stack = np.zeros((fs, width, height, 3), dtype=np.float32)
+    indices = forward_model.precompute_indices(width, height, MAX_KERNEL_SIZE)
     result = nesterov.bounded_fista_3d(
-        dpt, defocus_stack, IMAGE_RANGE=255.0, indices=indices,
-        tol=1e-8, maxiter=500, verbose=False
+        dpt, defocus_stack,
+        dataset_params=dataset_params, max_kernel_size=MAX_KERNEL_SIZE,
+        indices=indices, tol=1e-8, maxiter=500, verbose=False
     )
     assert np.allclose(result, 0.0, atol=1e-3)
 
@@ -185,8 +192,9 @@ def test_bounded_fista_verbose_false():
     # Should complete without error when verbose=False
     dpt, _, defocus_stack, indices = _make_tiny_case(width=6, height=6)
     result = nesterov.bounded_fista_3d(
-        dpt, defocus_stack, IMAGE_RANGE=255.0, indices=indices,
-        verbose=False, maxiter=5
+        dpt, defocus_stack,
+        dataset_params=dataset_params, max_kernel_size=MAX_KERNEL_SIZE,
+        indices=indices, verbose=False, maxiter=5
     )
     assert result.shape == (6, 6, 3)
 

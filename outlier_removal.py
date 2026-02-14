@@ -14,7 +14,6 @@ neighbours within a window of radius MAX_KERNEL_SIZE // 2.
 import numpy as np
 import matplotlib.pyplot as plt
 
-import globals
 import utils
 
 
@@ -22,16 +21,15 @@ import utils
 # TV-based detection
 # ---------------------------------------------------------------------------
 
-def compute_tv_map(image, patch_size=None):
+def compute_tv_map(image, patch_size):
     """Compute a per-pixel total-variation map using local patches.
 
     Parameters
     ----------
     image : ndarray, shape (H, W) or (H, W, C)
         Input image (e.g. a depth map).
-    patch_size : int or None
+    patch_size : int
         Side length of the square patch (must be odd).
-        Defaults to ``globals.MAX_KERNEL_SIZE``.
 
     Returns
     -------
@@ -39,10 +37,7 @@ def compute_tv_map(image, patch_size=None):
         TV value normalised by patch area at each pixel.
         Border pixels within *pad* of the edge are left as zero.
     """
-    if patch_size is not None:
-        assert patch_size % 2 != 0, "patch_size must be odd"
-    if patch_size is None:
-        patch_size = globals.MAX_KERNEL_SIZE
+    assert patch_size % 2 != 0, "patch_size must be odd"
 
     pad = patch_size // 2
     width, height = image.shape[:2]
@@ -56,7 +51,7 @@ def compute_tv_map(image, patch_size=None):
     return tv_map
 
 
-def find_high_tv_patches(dpt, tv_thresh=0.15, patch_size=None):
+def find_high_tv_patches(dpt, tv_thresh=0.15, patch_size=7):
     """Return pixels whose local TV exceeds *tv_thresh* in the depth map *dpt*.
 
     Parameters
@@ -65,7 +60,8 @@ def find_high_tv_patches(dpt, tv_thresh=0.15, patch_size=None):
         Depth map to analyse.
     tv_thresh : float
         Normalized TV threshold above which a pixel is flagged.
-    patch_size : int or None
+    patch_size : int
+        Side length of the square patch (must be odd).
         Passed through to :func:`compute_tv_map`.
 
     Returns
@@ -84,7 +80,7 @@ def find_high_tv_patches(dpt, tv_thresh=0.15, patch_size=None):
 # Constant-patch detection
 # ---------------------------------------------------------------------------
 
-def find_constant_patches(aif, diff_thresh=2, patch_size=None):
+def find_constant_patches(aif, diff_thresh=2, patch_size=7):
     """Return pixels that lie inside near-constant-colour patches of *aif*.
 
     Textureless regions of the all-in-focus image provide no defocus cue, so
@@ -97,19 +93,15 @@ def find_constant_patches(aif, diff_thresh=2, patch_size=None):
     diff_thresh : int
         Maximum per-channel (max - min) range within a patch for it to be
         considered constant.  Units are raw pixel values [0, 255].
-    patch_size : int or None
+    patch_size : int
         Side length of the square patch (must be odd).
-        Defaults to ``globals.MAX_KERNEL_SIZE``.
 
     Returns
     -------
     problem_pixels : ndarray, shape (N, 2)
         (row, col) indices of flagged pixels.
     """
-    if patch_size is not None:
-        assert patch_size % 2 != 0, "patch_size must be odd"
-    if patch_size is None:
-        patch_size = globals.MAX_KERNEL_SIZE
+    assert patch_size % 2 != 0, "patch_size must be odd"
     rad = patch_size // 2
 
     padded_aif = np.pad(aif, ((rad, rad), (rad, rad), (0, 0)), mode='edge')
@@ -130,12 +122,12 @@ def find_constant_patches(aif, diff_thresh=2, patch_size=None):
 # Main entry point
 # ---------------------------------------------------------------------------
 
-def remove_outliers(dpt, aif, patch_type='tv', diff_thresh=2, tv_thresh=0.15, to_plot=True):
+def remove_outliers(dpt, aif, neighborhood_size, patch_type='tv', diff_thresh=2, tv_thresh=0.15, to_plot=True):
     """Detect and replace outlier pixels in *depth_map*.
 
     Outliers are identified by one of two strategies (see module docstring) and
     then replaced by the mean depth of their non-outlier neighbours within a
-    neighbourhood of radius ``MAX_KERNEL_SIZE // 2``.
+    neighbourhood of radius ``max_kernel_size // 2``.
 
     Parameters
     ----------
@@ -143,6 +135,9 @@ def remove_outliers(dpt, aif, patch_type='tv', diff_thresh=2, tv_thresh=0.15, to
         Depth map to clean and used by the ``'tv'`` strategy.
     aif : ndarray, shape (W, H, 3)
         All-in-focus image used by the ``'constant'`` strategy and for plotting.
+    neighborhood_size : int
+        Side length of the square kernel window (must be odd).
+        Used to determine the replacement neighbourhood radius.
     patch_type : {'tv', 'constant'}
         Which detection strategy to use.
     diff_thresh : int
@@ -185,8 +180,8 @@ def remove_outliers(dpt, aif, patch_type='tv', diff_thresh=2, tv_thresh=0.15, to
         plt.show()
 
     removed = 0
-    # Radius of the replacement neighbourhood, derived from the maximum kernel size
-    neighborhood_rad = int((float(globals.MAX_KERNEL_SIZE) - 1) / 2.)
+    # Radius of the replacement neighbourhood
+    neighborhood_rad = int((float(neighborhood_size) - 1) / 2.)
     for i, j in problem_pixels:
         patch = []
         for dx in range(-neighborhood_rad, neighborhood_rad + 1):

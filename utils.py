@@ -18,8 +18,6 @@ import numpy as np
 import matplotlib.pyplot as plt
 import skimage
 
-import globals
-
 
 # ============================================================================
 # Mathematical/Statistical Functions
@@ -434,20 +432,31 @@ def load_aif(path, fn):
 # General Utility Functions
 # ============================================================================
 
+_MODULE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+
+def _resolve_path(path):
+    """Return *path* as-is if absolute, else resolve relative to dfd/."""
+    if os.path.isabs(path):
+        return path
+    return os.path.join(_MODULE_DIR, path)
+
+
 def create_experiment_folder(experiment_name, base_folder="experiments"):
     """
     Create a timestamped folder for experiment results.
 
     Args:
         experiment_name: Name of the experiment
-        base_folder: Base directory for experiments (default: "experiments")
+        base_folder: Base directory for experiments (default: "experiments").
+            Relative paths are resolved against the dfd/ directory.
 
     Returns:
         str: Path to created experiment folder
     """
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     folder_name = f"{experiment_name}_{timestamp}"
-    experiment_folder = os.path.join(base_folder, folder_name)
+    experiment_folder = os.path.join(_resolve_path(base_folder), folder_name)
     os.makedirs(experiment_folder)
 
     print(f"Created experiment folder: {experiment_folder}")
@@ -469,15 +478,6 @@ def format_number(x):
     """
     return f"{x:.6e}" if abs(x) < 1e-3 else f"{x:.6f}"
 
-
-def update_max_kernel_size(new_value):
-    """
-    Update the global maximum kernel size setting.
-
-    Args:
-        new_value: New maximum kernel size value
-    """
-    globals.MAX_KERNEL_SIZE = new_value
 
 
 def kernel_size_heuristic(width, height):

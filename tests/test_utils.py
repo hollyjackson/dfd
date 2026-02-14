@@ -5,11 +5,7 @@ import struct
 import sys
 
 import numpy as np
-import globals
 import utils
-
-# Set the one global this module needs
-globals.MAX_KERNEL_SIZE = 7
 
 
 # ============================================================================
@@ -516,25 +512,6 @@ def test_format_number_negative():
 
     result = utils.format_number(-1.234)
     assert 'e' not in result
-
-
-# ---------------------------------------------------------------------------
-# update_max_kernel_size
-# ---------------------------------------------------------------------------
-
-def test_update_max_kernel_size():
-    """Test updating the global max kernel size."""
-    original = globals.MAX_KERNEL_SIZE
-
-    try:
-        utils.update_max_kernel_size(15)
-        assert globals.MAX_KERNEL_SIZE == 15
-
-        utils.update_max_kernel_size(21)
-        assert globals.MAX_KERNEL_SIZE == 21
-    finally:
-        # Restore original value
-        globals.MAX_KERNEL_SIZE = original
 
 
 # ---------------------------------------------------------------------------

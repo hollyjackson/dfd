@@ -15,7 +15,6 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 import forward_model
-import globals
 import initialization
 import nesterov
 import section_search
@@ -27,16 +26,21 @@ def mse_loss(pred, gt):
 
 
 def coordinate_descent(
-        defocus_stack, experiment_folder='experiments', gss_tol=1e-2, gss_window=1, T_0=100,
-        alpha=None, num_epochs=25, nesterov_first=True, save_plots=True, show_plots=False, save_losses=True,
+        defocus_stack, dataset_params, max_kernel_size,
+        experiment_folder='experiments', gss_tol=1e-2, gss_window=1, T_0=100,
+        alpha=None, num_epochs=25, nesterov_first=False, save_plots=False, show_plots=False, save_losses=True,
         depth_init=None, aif_init=None, experiment_name='coord-descent', vmin=None, vmax=None,
-        num_Z=100, verbose=True, windowed_mse=False):
+        num_Z=100, verbose=True, windowed_mse=False, window_size=None):
     """Run alternating minimization on depth and AIF.
 
     Parameters
     ----------
     defocus_stack : ndarray, shape (fs, W, H, C)
         Observed focal stack.
+    dataset_params : DatasetParams
+        Camera/scene parameters.
+    max_kernel_size : int
+        Side length of the square kernel window (must be odd).
     experiment_folder : str
         Root directory for saving outputs.
     gss_tol : float
@@ -69,6 +73,9 @@ def coordinate_descent(
         Print progress messages.
     windowed_mse : bool
         Use spatially-windowed MSE in the grid search.
+    window_size : int or None
+        Side length of the spatial averaging window (must be odd).
+        Required when *windowed_mse* is True.
 
     Returns
     -------
@@ -86,9 +93,9 @@ def coordinate_descent(
     # INITIALIZATION: Setup depth range, output folder, and forward model
     # ============================================================================
 
-    # Load global depth bounds and set visualization range for plots (if not provided)
-    min_Z = globals.min_Z
-    max_Z = globals.max_Z
+    # Load depth bounds from dataset params and set visualization range for plots (if not provided)
+    min_Z = dataset_params.min_Z
+    max_Z = dataset_params.max_Z
     print('Depth range: [',min_Z,'-',max_Z,']')
     if vmin is None:
         vmin = min_Z
@@ -120,7 +127,7 @@ def coordinate_descent(
     # CRITICAL: Precompute sparse matrix structure for the forward model
     # This builds the fixed sparsity pattern used in all forward/backward passes,
     # speeding up matrix operations throughout the optimization
-    indices = forward_model.precompute_indices(width, height)
+    indices = forward_model.precompute_indices(width, height, max_kernel_size)
     sample_data = np.random.rand(indices[2].size).astype(np.float32)
     template_A_stack = forward_model.build_fixed_pattern_csr(width, height, fs, indices[2], indices[3], sample_data)
 
@@ -134,14 +141,14 @@ def coordinate_descent(
         # Run bounded FISTA optimization to reconstruct the all-in-focus image
         # ie given the current depth map, find the sharp image that best explains the observed focal stack
         t0 = time.time()
-        aif = nesterov.bounded_fista_3d(dpt, defocus_stack, IMAGE_RANGE, indices=indices, template_A_stack=template_A_stack, maxiter=T_i, verbose=verbose)
+        aif = nesterov.bounded_fista_3d(dpt, defocus_stack, dataset_params, max_kernel_size, indices=indices, template_A_stack=template_A_stack, maxiter=T_i, verbose=verbose)
         if verbose:
             print('FISTA duration', time.time()-t0)
             print('\nAIF result range: [',aif.min(), ',', aif.max(),']')
 
         # Compute MSE between observed focal stack and synthesized stack
         # from current AIF and depth estimates via the forward model
-        loss = mse_loss(forward_model.forward(dpt, aif, indices=indices, template_A_stack=template_A_stack), defocus_stack)
+        loss = mse_loss(forward_model.forward(dpt, aif, dataset_params, max_kernel_size, indices=indices, template_A_stack=template_A_stack), defocus_stack)
         losses.append(loss)
         if verbose:
             # TV (total variation) measures image smoothness - useful for detecting artifacts
@@ -169,7 +176,8 @@ def coordinate_descent(
         # and identifies promising regions for refinement.
         t0 = time.time()
         depth_map, Z, min_indices, all_losses = section_search.grid_search(
-            aif, defocus_stack, indices=indices, min_Z=min_Z, max_Z=max_Z, num_Z=num_Z,
+            aif, defocus_stack, dataset_params, max_kernel_size,
+            window_size=window_size, indices=indices, min_Z=min_Z, max_Z=max_Z, num_Z=num_Z,
             verbose=verbose, windowed=windowed_mse
         )
         if verbose:
@@ -191,7 +199,8 @@ def coordinate_descent(
         # Refine each pixel's depth estimate to sub-grid accuracy using golden-section search.
         t0 = time.time()
         depth_map_golden = section_search.golden_section_search(
-            Z, min_indices, aif, defocus_stack, indices=indices, template_A_stack=template_A_stack,
+            Z, min_indices, aif, defocus_stack, dataset_params, max_kernel_size,
+            indices=indices, template_A_stack=template_A_stack,
             window=gss_window, tolerance=gss_tol, last_dpt=last_dpt, verbose=verbose, windowed=False
         )
         if verbose:
@@ -213,7 +222,7 @@ def coordinate_descent(
 
         # Compute reconstruction loss: measure how well our current depth and AIF estimates
         # reconstruct the observed focal stack via the forward model
-        loss = mse_loss(forward_model.forward(dpt, aif, indices=indices, template_A_stack=template_A_stack), defocus_stack)
+        loss = mse_loss(forward_model.forward(dpt, aif, dataset_params, max_kernel_size, indices=indices, template_A_stack=template_A_stack), defocus_stack)
         losses.append(loss)
 
         if verbose:

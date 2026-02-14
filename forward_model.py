@@ -7,7 +7,7 @@ Each focal-plane image is modelled as a sparse matrix-vector product::
 where ``x`` is the vectorised all-in-focus (AIF) image and ``A_i`` is the
 per-pixel Gaussian blur operator for focal plane *i*.  The blur radius at
 each pixel is determined by the circle-of-confusion (CoC) formula given the
-camera parameters in ``globals``.
+camera parameters in a :class:`DatasetParams` instance.
 
 Public API
 ----------
@@ -18,15 +18,18 @@ forward             -- apply the full forward model: AIF -> defocus stack
 import numpy as np
 import scipy
 
-import globals
-
 
 # ---------------------------------------------------------------------------
 # Kernel geometry helpers
 # ---------------------------------------------------------------------------
 
-def compute_u_v():
+def compute_u_v(max_kernel_size):
     """Return meshgrid coordinate arrays for the blur kernel.
+
+    Parameters
+    ----------
+    max_kernel_size : int
+        Side length of the square kernel window (must be odd).
 
     Returns
     -------
@@ -34,7 +37,6 @@ def compute_u_v():
         Row and column offset coordinates over the K×K kernel window,
         broadcast-ready for per-pixel kernel evaluation.
     """
-    max_kernel_size = globals.MAX_KERNEL_SIZE
     lim = max_kernel_size // 2
 
     us = np.linspace(-lim, lim, max_kernel_size, dtype=np.float32)
@@ -46,7 +48,7 @@ def compute_u_v():
     return u, v
 
 
-def compute_shifted_indices(width, height):
+def compute_shifted_indices(width, height, max_kernel_size):
     """Return per-pixel neighbour index arrays for the K×K kernel window.
 
     For each pixel (i, j) and each kernel offset (di, dj) within the
@@ -57,13 +59,14 @@ def compute_shifted_indices(width, height):
     ----------
     width, height : int
         Image dimensions.
+    max_kernel_size : int
+        Side length of the square kernel window (must be odd).
 
     Returns
     -------
     row_indices, col_indices : ndarray, shape (width, height, K, K)
         Absolute row / column indices for each pixel's kernel neighbours.
     """
-    max_kernel_size = globals.MAX_KERNEL_SIZE
     lim = max_kernel_size // 2
 
     row_indices = np.zeros((width, height, max_kernel_size, max_kernel_size), dtype=np.intp)
@@ -108,7 +111,7 @@ def generate_mask(row_indices, col_indices, width, height):
     return mask
 
 
-def compute_mask_flattened_indices(row_indices, col_indices, mask, width, height):
+def compute_mask_flattened_indices(row_indices, col_indices, mask, width, height, max_kernel_size):
     """Convert 2-D neighbour indices to flat CSR (row, col) index arrays.
 
     Parameters
@@ -117,6 +120,8 @@ def compute_mask_flattened_indices(row_indices, col_indices, mask, width, height
     mask : ndarray of bool, shape (width * height * K * K,)
         Boundary mask from ``generate_mask``.
     width, height : int
+    max_kernel_size : int
+        Side length of the square kernel window (must be odd).
 
     Returns
     -------
@@ -124,7 +129,6 @@ def compute_mask_flattened_indices(row_indices, col_indices, mask, width, height
         Flattened source-pixel and neighbour indices for CSR construction,
         with out-of-bounds entries removed.
     """
-    max_kernel_size = globals.MAX_KERNEL_SIZE
 
     flattened_indices = row_indices * height + col_indices
 
@@ -140,7 +144,7 @@ def compute_mask_flattened_indices(row_indices, col_indices, mask, width, height
     return row, col
 
 
-def precompute_indices(width, height):
+def precompute_indices(width, height, max_kernel_size):
     """Build all index structures needed to assemble blur matrices.
 
     Combines ``compute_u_v``, ``compute_shifted_indices``, ``generate_mask``,
@@ -151,6 +155,8 @@ def precompute_indices(width, height):
     ----------
     width, height : int
         Image dimensions.
+    max_kernel_size : int
+        Side length of the square kernel window (must be odd).
 
     Returns
     -------
@@ -161,10 +167,10 @@ def precompute_indices(width, height):
     mask : ndarray of bool
         Boundary mask (see ``generate_mask``).
     """
-    u, v = compute_u_v()
-    row_indices, col_indices = compute_shifted_indices(width, height)
+    u, v = compute_u_v(max_kernel_size)
+    row_indices, col_indices = compute_shifted_indices(width, height, max_kernel_size)
     mask = generate_mask(row_indices, col_indices, width, height)
-    row, col = compute_mask_flattened_indices(row_indices, col_indices, mask, width, height)
+    row, col = compute_mask_flattened_indices(row_indices, col_indices, mask, width, height, max_kernel_size)
 
     return u, v, row, col, mask
 
@@ -173,7 +179,7 @@ def precompute_indices(width, height):
 # CoC and kernel computation
 # ---------------------------------------------------------------------------
 
-def computer(dpt, Df):
+def computer(dpt, dataset_params):
     """Compute the per-pixel blur radius (in pixels) for each focal plane.
 
     Uses the thin-lens circle-of-confusion formula::
@@ -181,33 +187,34 @@ def computer(dpt, Df):
         CoC = D * |z - Df| / z * f / (Df - f)
         r   = CoC / 2 / ps
 
-    where ``D``, ``f``, ``ps`` are camera parameters from ``globals``.
-    Radii below ``globals.thresh`` are clamped to that threshold.
+    where ``D``, ``f``, ``ps``, ``thresh`` are camera parameters from
+    *dataset_params*.
 
     Parameters
     ----------
     dpt : ndarray, shape (width, height)
         Depth map in metres.
-    Df : array-like, shape (fs,)
-        Focus distances in metres for each focal plane.
+    dataset_params : DatasetParams
+        Camera/scene parameters (uses ``Df``, ``D``, ``f``, ``ps``, ``thresh``).
 
     Returns
     -------
     r : ndarray, shape (width, height, fs)
         Blur radius in pixels for every pixel and focal plane.
     """
+    Df = dataset_params.Df
     # format focus setting
     if not isinstance(Df, np.ndarray):
         Df = Df.numpy().astype(np.float32)
     Df_expanded = Df.reshape(1, 1, -1)
     # compute CoC
-    CoC = ((globals.D)
+    CoC = ((dataset_params.D)
         * (np.abs(dpt[..., None] - Df_expanded) / (dpt[..., None] + 1e-8))
-        * (globals.f / (Df_expanded - globals.f)))
-    r = CoC / 2. / globals.ps
+        * (dataset_params.f / (Df_expanded - dataset_params.f)))
+    r = CoC / 2. / dataset_params.ps
 
     # threshold
-    r[np.where(r < globals.thresh)] = globals.thresh
+    r[np.where(r < dataset_params.thresh)] = dataset_params.thresh
 
     return r
 
@@ -314,7 +321,7 @@ def build_fixed_pattern_csr(width, height, fs, row, col, data, dtype=np.float32)
     return A_stack, order
 
 
-def buildA(dpt, u, v, row, col, mask, template_A_stack=None):
+def buildA(dpt, u, v, row, col, mask, dataset_params, template_A_stack=None):
     """Assemble the stack of per-focal-plane sparse blur operators.
 
     Parameters
@@ -327,6 +334,8 @@ def buildA(dpt, u, v, row, col, mask, template_A_stack=None):
         Flat CSR index arrays from ``precompute_indices``.
     mask : ndarray of bool
         Boundary mask from ``precompute_indices``.
+    dataset_params : DatasetParams
+        Camera/scene parameters (passed to ``computer``).
     template_A_stack : tuple (A_stack_cache, order), optional
         Pre-built CSR structure from a previous ``buildA`` call.  When
         provided, only the ``.data`` arrays are updated in place, which is
@@ -338,7 +347,7 @@ def buildA(dpt, u, v, row, col, mask, template_A_stack=None):
         Sparse blur operator for each focal plane.
     """
     width, height = dpt.shape
-    r = computer(dpt, globals.Df)
+    r = computer(dpt, dataset_params)
     _, _, fs = r.shape
     r = r[..., None, None]
 
@@ -370,7 +379,7 @@ def buildA(dpt, u, v, row, col, mask, template_A_stack=None):
 # Public API
 # ---------------------------------------------------------------------------
 
-def forward(dpt, aif, indices=None, template_A_stack=None):
+def forward(dpt, aif, dataset_params, max_kernel_size, indices=None, template_A_stack=None):
     """Apply the forward model: AIF image -> defocus stack.
 
     Computes ``b_i = A_i @ x`` for each focal plane *i*, where ``x`` is the
@@ -382,6 +391,10 @@ def forward(dpt, aif, indices=None, template_A_stack=None):
         Depth map in metres.
     aif : ndarray, shape (width, height, 3)
         All-in-focus RGB image.
+    dataset_params : DatasetParams
+        Camera/scene parameters (passed to ``buildA``).
+    max_kernel_size : int
+        Side length of the square kernel window (must be odd).
     indices : tuple, optional
         Precomputed index structures from ``precompute_indices``.  Pass this
         to avoid recomputing when calling ``forward`` repeatedly.
@@ -396,11 +409,12 @@ def forward(dpt, aif, indices=None, template_A_stack=None):
     width, height = dpt.shape
 
     if indices is None:
-        u, v, row, col, mask = precompute_indices(width, height)
+        u, v, row, col, mask = precompute_indices(width, height, max_kernel_size)
     else:
         u, v, row, col, mask = indices
 
-    A_stack = buildA(dpt, u, v, row, col, mask, template_A_stack=template_A_stack)
+    A_stack = buildA(dpt, u, v, row, col, mask, dataset_params,
+                     template_A_stack=template_A_stack)
 
     defocus_stack = []
 
