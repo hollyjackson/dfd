@@ -1,23 +1,26 @@
 """
-NYUv2 Dataset Processing Pipeline
+Make3D Dataset Processing Pipeline
 
 This script runs the coordinate descent depth-from-defocus algorithm on images
-from the NYUv2 dataset. It performs the following steps:
-1. Load ground truth AIF and depth from NYUv2 dataset
-2. Generate synthetic defocus stack using forward model
+from the Make3D dataset. It performs the following steps:
+1. Load ground truth AIF and depth from Make3D dataset
+2. Generate defocus stack using forward model
 3. Initialize AIF image using MRF optimization
 4. Run coordinate descent to jointly optimize depth map and AIF image
 5. Compute and save accuracy metrics
 
 Usage:
-    python run_coordinate_descent_nyuv2.py <split> <image_number>
+    python scripts/run_coordinate_descent_make3d.py <split> <img_name>
 
     split: 'train' or 'test'
-    image_number: Image number from the dataset
+    img_name: Image filename (e.g., 'img-math7-p-282t0.jpg')
 """
 
-import os
 import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+import os
 import numpy as np
 
 import utils
@@ -26,19 +29,19 @@ import globals
 import coordinate_descent
 import initialization
 import dataset_loader
-from config import NYUV2
+from config import MAKE3D
 
 
 # =============================================================================
 # Data Loading and Preprocessing
 # =============================================================================
 
-def load_and_generate_defocus_stack(image_number, split, config):
+def load_and_generate_defocus_stack(img_name, split, config):
     """
-    Load NYUv2 ground truth and generate synthetic defocus stack.
+    Load Make3D ground truth and generate synthetic defocus stack.
 
     Args:
-        image_number: Image number from the dataset
+        img_name: Image filename (e.g., 'img-math7-p-282t0.jpg')
         split: Dataset split ('train' or 'test')
         config: Configuration object containing dataset parameters
 
@@ -49,16 +52,16 @@ def load_and_generate_defocus_stack(image_number, split, config):
             - gt_dpt: Ground truth depth map
     """
     # Initialize dataset-specific globals
-    globals.init_NYUv2()
+    globals.init_Make3D()
+    globals.window_size = config.window_size
 
     # Load ground truth AIF and depth
-    gt_aif, gt_dpt = dataset_loader.load_single_sample_NYUv2(
-        sample=image_number, set=split, res='half',
-        data_dir=config.data_dir
+    gt_aif, gt_dpt = dataset_loader.load_single_sample_Make3D(
+        img_name=img_name, split=split, data_dir=config.data_dir
     )
 
     # Set adaptive kernel size based on image dimensions
-    width, height = gt_dpt.shape
+    width, height, _ = gt_aif.shape
     max_kernel_size = utils.kernel_size_heuristic(width, height)
     print(f'Adaptive kernel size set to {max_kernel_size}')
     utils.update_max_kernel_size(max_kernel_size)
@@ -70,31 +73,31 @@ def load_and_generate_defocus_stack(image_number, split, config):
 
 
 
-
 # =============================================================================
 # Main Pipeline
 # =============================================================================
 
+
 def main():
-    """Run the NYUv2 depth-from-defocus pipeline."""
+    """Run the Make3D depth-from-defocus pipeline."""
     # Parse command-line arguments
     if len(sys.argv) != 3:
-        print("Usage: python run_coordinate_descent_nyuv2.py <split> <image_number>")
+        print("Usage: python scripts/run_coordinate_descent_make3d.py <split> <img_name>")
         print("  split: 'train' or 'test'")
-        print("  image_number: Image number from the dataset")
+        print("  img_name: Image filename (e.g., 'img-math7-p-282t0.jpg')")
         sys.exit(1)
 
     split = sys.argv[1]
-    image_number = sys.argv[2]
-    config = NYUV2
+    img_name = sys.argv[2]
+    config = MAKE3D
 
     # Generate experiment name
-    experiment_name = config.get_experiment_name(split, image_number)
+    experiment_name = config.get_experiment_name(split, img_name)
     print(f"Running experiment: {experiment_name}")
 
     # Load ground truth and generate defocus stack
     print("Loading ground truth and generating defocus stack...")
-    defocus_stack, gt_aif, gt_dpt = load_and_generate_defocus_stack(image_number, split, config)
+    defocus_stack, gt_aif, gt_dpt = load_and_generate_defocus_stack(img_name, split, config)
 
     # Compute AIF initialization
     print("Computing AIF initialization...")
@@ -124,7 +127,7 @@ def main():
 
     # Save final results
     print("Saving results...")
-    utils.save_dpt(exp_folder, 'dpt', dpt)
+    utils.save_dpt_npy(exp_folder, 'dpt', dpt)
     utils.save_aif(exp_folder, 'aif', aif)
 
     # Compute and save accuracy metrics
@@ -132,6 +135,7 @@ def main():
     rms = utils.compute_RMS(dpt, gt_dpt)
     rel = utils.compute_AbsRel(dpt, gt_dpt)
     deltas = utils.compute_accuracy_metrics(dpt, gt_dpt)
+
     outfile = os.path.join(exp_folder, "accuracy_metrics.txt")
     delta_str = ", ".join(f"{float(deltas[d]):.6f}" for d in sorted(deltas.keys()))
     with open(outfile, "w", encoding="utf-8") as f:

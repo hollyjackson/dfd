@@ -1,8 +1,5 @@
 import numpy as np
 
-global AVG_SENSOR_WIDTH
-AVG_SENSOR_WIDTH = 3.1 * 1e-3 # m
-
 global window_size
 
 def init_NYUv2():
@@ -54,7 +51,6 @@ def init_Make3D():
     max_Z = 80 #
     
     Df = np.array([1, 2, 4, 8, 16, 32, 64], dtype=np.float32)
-    print('Df:',Df)
 
     thresh = 0.5
 

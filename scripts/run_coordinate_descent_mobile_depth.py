@@ -9,7 +9,7 @@ from the Mobile Depth dataset. It performs the following steps:
 4. Save results to experiment folder
 
 Usage:
-    python run_coordinate_descent_mobile_depth.py <example_name>
+    python scripts/run_coordinate_descent_mobile_depth.py <example_name>
 
 Valid example names:
     keyboard, bottles, fruits, metals, plants, telephone, window,
@@ -17,6 +17,9 @@ Valid example names:
 """
 
 import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
 import numpy as np
 
 import utils
@@ -78,7 +81,7 @@ def main():
     """Run the Mobile Depth depth-from-defocus pipeline."""
     # Parse command-line arguments
     if len(sys.argv) != 2:
-        print("Usage: python run_coordinate_descent_mobile_depth.py <example_name>")
+        print("Usage: python scripts/run_coordinate_descent_mobile_depth.py <example_name>")
         print(f"Valid examples: {', '.join(MOBILE_DEPTH.valid_examples)}")
         sys.exit(1)
 

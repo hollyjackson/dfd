@@ -63,10 +63,6 @@ def coordinate_descent(
         Subdirectory name for this run's outputs.
     vmin, vmax : float or None
         Depth colormap range for saved plots.
-    remove_outliers : bool
-        Apply outlier removal to the final depth map.
-    diff_thresh : float
-        Threshold parameter for outlier removal.
     num_Z : int
         Number of depth candidates for the coarse grid search.
     verbose : bool
