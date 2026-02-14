@@ -23,7 +23,7 @@ def _make_tiny_case(width=8, height=8, seed=0):
     """Build a small synthetic (dpt, defocus_stack, indices) tuple via the forward model."""
     rng = np.random.default_rng(seed)
     # Constant depth at the first focus distance
-    dpt = np.full((width, height), dataset_params.Df[0], dtype=np.float32)
+    dpt = np.full((width, height), dataset_params.Zf[0], dtype=np.float32)
     aif = rng.uniform(0, 255, (width, height, 3)).astype(np.float32)
     indices = forward_model.precompute_indices(width, height, MAX_KERNEL_SIZE)
     defocus_stack = forward_model.forward(dpt, aif, dataset_params, MAX_KERNEL_SIZE, indices=indices)
@@ -176,8 +176,8 @@ def test_bounded_fista_zero_observations():
     # b=0 => min ||Ax||² s.t. 0 <= x <= 255 has the unique solution x=0
     # (x=0 is feasible and achieves loss=0, which is the global minimum)
     width, height = 6, 6
-    dpt = np.full((width, height), dataset_params.Df[0], dtype=np.float32)
-    fs = len(dataset_params.Df)
+    dpt = np.full((width, height), dataset_params.Zf[0], dtype=np.float32)
+    fs = len(dataset_params.Zf)
     defocus_stack = np.zeros((fs, width, height, 3), dtype=np.float32)
     indices = forward_model.precompute_indices(width, height, MAX_KERNEL_SIZE)
     result = nesterov.bounded_fista_3d(

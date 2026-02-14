@@ -16,7 +16,7 @@ class DatasetParams:
 
     f: float = 0.0              # focal length (m or unitless for MobileDepth)
     D: float = 0.0              # aperture diameter (m or unitless for MobileDepth)
-    Df: np.ndarray = field(default_factory=lambda: np.array([], dtype=np.float32))
+    Zf: np.ndarray = field(default_factory=lambda: np.array([], dtype=np.float32))
     ps: float = 0.0             # pixel size (m or unitless for MobileDepth)
     min_Z: float = 0.0          # scene depth range lower bound
     max_Z: float = 0.0          # scene depth range upper bound
@@ -28,7 +28,7 @@ class DatasetParams:
         return DatasetParams(
             f=50e-3,
             D=50e-3 / 8,
-            Df=np.array([1, 1.5, 2.5, 4, 6], dtype=np.float32),
+            Zf=np.array([1, 1.5, 2.5, 4, 6], dtype=np.float32),
             ps=1.2e-5,
             min_Z=0.1,
             max_Z=10.0,
@@ -39,7 +39,7 @@ class DatasetParams:
     def for_MobileDepth():
         """Partially filled parameters for MobileDepth.
 
-        ``f``, ``D``, and ``Df`` are set by the dataset loader from
+        ``f``, ``D``, and ``Zf`` are set by the dataset loader from
         per-scene calibration files.
         """
         return DatasetParams(
@@ -57,7 +57,7 @@ class DatasetParams:
         EXIF metadata and image dimensions.
         """
         return DatasetParams(
-            Df=np.array([1, 2, 4, 8, 16, 32, 64], dtype=np.float32),
+            Zf=np.array([1, 2, 4, 8, 16, 32, 64], dtype=np.float32),
             min_Z=0.01,
             max_Z=80,
             thresh=0.5,

@@ -16,7 +16,7 @@ WINDOW_SIZE = 3
 
 def test_windowed_mse_grid_shape():
     width, height = 20, 20
-    fs = len(dataset_params.Df)
+    fs = len(dataset_params.Zf)
     defocus_stack = np.random.rand(fs, width, height, 3).astype(np.float32)
     pred = np.random.rand(fs, width, height, 3).astype(np.float32)
 
@@ -26,7 +26,7 @@ def test_windowed_mse_grid_shape():
 
 def test_windowed_mse_grid_perfect_match_gives_zero():
     width, height = 20, 20
-    fs = len(dataset_params.Df)
+    fs = len(dataset_params.Zf)
     defocus_stack = np.random.rand(fs, width, height, 3).astype(np.float32)
 
     loss = section_search.windowed_mse_grid(defocus_stack, defocus_stack, WINDOW_SIZE)
@@ -36,7 +36,7 @@ def test_windowed_mse_grid_perfect_match_gives_zero():
 def test_windowed_mse_grid_positive():
     # MSE should always be non-negative
     width, height = 15, 15
-    fs = len(dataset_params.Df)
+    fs = len(dataset_params.Zf)
     defocus_stack = np.random.rand(fs, width, height, 3).astype(np.float32)
     pred = np.random.rand(fs, width, height, 3).astype(np.float32)
 
@@ -47,7 +47,7 @@ def test_windowed_mse_grid_positive():
 def test_windowed_mse_grid_symmetric_around_center():
     # For a centered feature, windowed MSE should be roughly symmetric
     width, height = 20, 20
-    fs = len(dataset_params.Df)
+    fs = len(dataset_params.Zf)
 
     # Create symmetric defocus stack (constant)
     defocus_stack = np.ones((fs, width, height, 3), dtype=np.float32) * 0.5
@@ -67,7 +67,7 @@ def test_windowed_mse_grid_symmetric_around_center():
 def test_windowed_mse_grid_window_size_effect():
     # With window_size=1 (no windowing), should equal direct MSE
     width, height = 10, 10
-    fs = len(dataset_params.Df)
+    fs = len(dataset_params.Zf)
     defocus_stack = np.random.rand(fs, width, height, 3).astype(np.float32)
     pred = np.random.rand(fs, width, height, 3).astype(np.float32)
 
@@ -83,7 +83,7 @@ def test_windowed_mse_grid_window_size_effect():
 
 def test_windowed_mse_grid_fast_shape():
     width, height = 20, 20
-    fs = len(dataset_params.Df)
+    fs = len(dataset_params.Zf)
     defocus_stack = np.random.rand(fs, width, height, 3).astype(np.float32)
     pred = np.random.rand(fs, width, height, 3).astype(np.float32)
 
@@ -96,7 +96,7 @@ def test_windowed_mse_grid_fast_vs_slow():
     # Note: windowed_mse_grid_fast has a TODO to verify against windowed_mse_grid
     # This test checks basic compatibility but may need adjustment
     width, height = 20, 20
-    fs = len(dataset_params.Df)
+    fs = len(dataset_params.Zf)
     defocus_stack = np.random.rand(fs, width, height, 3).astype(np.float32)
     pred = np.random.rand(fs, width, height, 3).astype(np.float32)
 
@@ -122,7 +122,7 @@ def test_windowed_mse_grid_fast_vs_slow():
 
 def test_windowed_mse_grid_fast_perfect_match():
     width, height = 20, 20
-    fs = len(dataset_params.Df)
+    fs = len(dataset_params.Zf)
     defocus_stack = np.random.rand(fs, width, height, 3).astype(np.float32)
 
     loss = section_search.windowed_mse_grid_fast(defocus_stack, defocus_stack, WINDOW_SIZE)
@@ -148,7 +148,7 @@ def test_windowed_mse_gss_shape():
 def test_windowed_mse_gss_perfect_reconstruction():
     # If depth_map is ground truth, loss should be near zero
     width, height = 10, 10
-    gt_dpt = np.full((width, height), dataset_params.Df[1], dtype=np.float32)
+    gt_dpt = np.full((width, height), dataset_params.Zf[1], dtype=np.float32)
     gt_aif = np.random.rand(width, height, 3).astype(np.float32) * 255
     indices = forward_model.precompute_indices(width, height, MAX_KERNEL_SIZE)
     defocus_stack = forward_model.forward(gt_dpt, gt_aif, dataset_params, MAX_KERNEL_SIZE, indices=indices)
@@ -163,7 +163,7 @@ def test_windowed_mse_gss_non_negative():
     depth_map = np.random.rand(width, height).astype(np.float32) * 5 + 0.5
     gt_aif = np.random.rand(width, height, 3).astype(np.float32) * 255
     indices = forward_model.precompute_indices(width, height, MAX_KERNEL_SIZE)
-    defocus_stack = np.random.rand(len(dataset_params.Df), width, height, 3).astype(np.float32) * 255
+    defocus_stack = np.random.rand(len(dataset_params.Zf), width, height, 3).astype(np.float32) * 255
 
     loss = section_search.windowed_mse_gss(depth_map, gt_aif, defocus_stack, dataset_params,
                                            MAX_KERNEL_SIZE, WINDOW_SIZE, indices=indices)
@@ -188,7 +188,7 @@ def test_objective_full_shape():
 
 def test_objective_full_perfect_reconstruction():
     width, height = 10, 10
-    dpt = np.full((width, height), dataset_params.Df[0], dtype=np.float32)
+    dpt = np.full((width, height), dataset_params.Zf[0], dtype=np.float32)
     aif = np.random.rand(width, height, 3).astype(np.float32) * 255
     indices = forward_model.precompute_indices(width, height, MAX_KERNEL_SIZE)
     defocus_stack = forward_model.forward(dpt, aif, dataset_params, MAX_KERNEL_SIZE, indices=indices)
@@ -202,7 +202,7 @@ def test_objective_full_non_negative():
     width, height = 10, 10
     dpt = np.random.rand(width, height).astype(np.float32) * 5 + 0.5
     aif = np.random.rand(width, height, 3).astype(np.float32) * 255
-    defocus_stack = np.random.rand(len(dataset_params.Df), width, height, 3).astype(np.float32) * 255
+    defocus_stack = np.random.rand(len(dataset_params.Zf), width, height, 3).astype(np.float32) * 255
     indices = forward_model.precompute_indices(width, height, MAX_KERNEL_SIZE)
 
     loss = section_search.objective_full(dpt, aif, defocus_stack, dataset_params, MAX_KERNEL_SIZE,
@@ -233,7 +233,7 @@ def test_objective_full_windowed_vs_non_windowed():
     dpt = np.full((width, height), 2.0, dtype=np.float32)
     aif = np.random.rand(width, height, 3).astype(np.float32) * 255
     indices = forward_model.precompute_indices(width, height, MAX_KERNEL_SIZE)
-    defocus_stack = np.random.rand(len(dataset_params.Df), width, height, 3).astype(np.float32) * 255
+    defocus_stack = np.random.rand(len(dataset_params.Zf), width, height, 3).astype(np.float32) * 255
 
     loss_windowed = section_search.objective_full(dpt, aif, defocus_stack, dataset_params, MAX_KERNEL_SIZE,
                                                   window_size=WINDOW_SIZE, indices=indices, windowed=True)
@@ -252,7 +252,7 @@ def test_objective_full_grid_search_path():
     dpt = np.full((width, height), constant_depth, dtype=np.float32)
     aif = np.random.rand(width, height, 3).astype(np.float32) * 255
     indices = forward_model.precompute_indices(width, height, MAX_KERNEL_SIZE)
-    defocus_stack = np.random.rand(len(dataset_params.Df), width, height, 3).astype(np.float32) * 255
+    defocus_stack = np.random.rand(len(dataset_params.Zf), width, height, 3).astype(np.float32) * 255
 
     # Should work for both windowed and non-windowed
     loss = section_search.objective_full(dpt, aif, defocus_stack, dataset_params, MAX_KERNEL_SIZE,
@@ -270,7 +270,7 @@ def test_objective_full_non_constant_depth():
     dpt = np.random.rand(width, height).astype(np.float32) * 5 + 0.5
     aif = np.random.rand(width, height, 3).astype(np.float32) * 255
     indices = forward_model.precompute_indices(width, height, MAX_KERNEL_SIZE)
-    defocus_stack = np.random.rand(len(dataset_params.Df), width, height, 3).astype(np.float32) * 255
+    defocus_stack = np.random.rand(len(dataset_params.Zf), width, height, 3).astype(np.float32) * 255
 
     loss = section_search.objective_full(dpt, aif, defocus_stack, dataset_params, MAX_KERNEL_SIZE,
                                          window_size=WINDOW_SIZE, indices=indices, windowed=True)

@@ -51,7 +51,7 @@ def compute_pixel_sharpness(image):
     return sharpness
 
 
-def trivial_aif_initialization(defocus_stack, Df=None):
+def trivial_aif_initialization(defocus_stack, Zf=None):
     """
     Create an all-in-focus image by selecting the sharpest pixel at each location.
 
@@ -62,7 +62,7 @@ def trivial_aif_initialization(defocus_stack, Df=None):
     Args:
         defocus_stack: Image stack of shape (N, W, H, C) where N is the number
                       of images with different focus levels
-        Df: Array of focus distances for plot labels (optional).
+        Zf: Array of focus distances for plot labels (optional).
 
     Returns:
         All-in-focus image of shape (W, H, C) constructed by selecting the
@@ -76,9 +76,9 @@ def trivial_aif_initialization(defocus_stack, Df=None):
         sharpness = compute_pixel_sharpness(defocus_stack[i])
         sharpness_stack[i] = sharpness
 
-    if Df is None:
-        Df = np.arange(len(defocus_stack))
-    utils.plot_single_stack(sharpness_stack, Df)
+    if Zf is None:
+        Zf = np.arange(len(defocus_stack))
+    utils.plot_single_stack(sharpness_stack, Zf)
 
     # Select sharpest pixel at each location
     aif = np.zeros((width, height, 3))

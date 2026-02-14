@@ -22,8 +22,8 @@ class BaseConfig:
     # Experiment settings
     experiment_folder: str = 'experiments'
     show_plots: bool = False
-    save_plots: bool = True
-    verbose: bool = True
+    save_plots: bool = False
+    verbose: bool = False
 
     # Dataset directory
     data_dir: str = 'data'

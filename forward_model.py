@@ -184,7 +184,7 @@ def computer(dpt, dataset_params):
 
     Uses the thin-lens circle-of-confusion formula::
 
-        CoC = D * |z - Df| / z * f / (Df - f)
+        CoC = D * |z - Zf| / z * f / (Zf - f)
         r   = CoC / 2 / ps
 
     where ``D``, ``f``, ``ps``, ``thresh`` are camera parameters from
@@ -195,22 +195,22 @@ def computer(dpt, dataset_params):
     dpt : ndarray, shape (width, height)
         Depth map in metres.
     dataset_params : DatasetParams
-        Camera/scene parameters (uses ``Df``, ``D``, ``f``, ``ps``, ``thresh``).
+        Camera/scene parameters (uses ``Zf``, ``D``, ``f``, ``ps``, ``thresh``).
 
     Returns
     -------
     r : ndarray, shape (width, height, fs)
         Blur radius in pixels for every pixel and focal plane.
     """
-    Df = dataset_params.Df
+    Zf = dataset_params.Zf
     # format focus setting
-    if not isinstance(Df, np.ndarray):
-        Df = Df.numpy().astype(np.float32)
-    Df_expanded = Df.reshape(1, 1, -1)
+    if not isinstance(Zf, np.ndarray):
+        Zf = Zf.numpy().astype(np.float32)
+    Zf_expanded = Zf.reshape(1, 1, -1)
     # compute CoC
     CoC = ((dataset_params.D)
-        * (np.abs(dpt[..., None] - Df_expanded) / (dpt[..., None] + 1e-8))
-        * (dataset_params.f / (Df_expanded - dataset_params.f)))
+        * (np.abs(dpt[..., None] - Zf_expanded) / (dpt[..., None] + 1e-8))
+        * (dataset_params.f / (Zf_expanded - dataset_params.f)))
     r = CoC / 2. / dataset_params.ps
 
     # threshold

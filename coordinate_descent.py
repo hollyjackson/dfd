@@ -96,7 +96,8 @@ def coordinate_descent(
     # Load depth bounds from dataset params and set visualization range for plots (if not provided)
     min_Z = dataset_params.min_Z
     max_Z = dataset_params.max_Z
-    print('Depth range: [',min_Z,'-',max_Z,']')
+    if verbose:
+        print('Depth range: [',min_Z,'-',max_Z,']')
     if vmin is None:
         vmin = min_Z
     if vmax is None:
@@ -104,7 +105,9 @@ def coordinate_descent(
 
     # Create output directory for saving results and intermediate visualizations
     if save_plots or save_losses:
-        experiment_folder = utils.create_experiment_folder(experiment_name, base_folder=experiment_folder)
+        experiment_folder = utils.create_experiment_folder(
+            experiment_name, base_folder=experiment_folder, verbose=verbose
+        )
 
     # Initialize tracking arrays for convergence monitoring
     losses = []              # MSE loss after each sub-problem step

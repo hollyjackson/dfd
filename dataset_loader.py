@@ -100,7 +100,7 @@ def load_NYUv2_aif(path_to_file, resize_frac=2):
         )
     return aif
 
-def load_single_sample_NYUv2(data_dir='data', sample='0045', set='train', res='half'):
+def load_single_sample_NYUv2(data_dir='data', sample='0045', set='train', res='half', verbose=False):
     """Load a single NYUv2 RGB-D sample.
 
     Parameters
@@ -113,6 +113,8 @@ def load_single_sample_NYUv2(data_dir='data', sample='0045', set='train', res='h
         Dataset split: 'train' or 'test'.
     res : str
         Resolution: 'half' (default) or 'full'.
+    verbose : bool
+        Print loading progress.
 
     Returns
     -------
@@ -230,7 +232,7 @@ def _load_make3d_depth(dpt_filename):
     return dpt[:, :, 3]
 
 
-def load_single_sample_Make3D(img_name, dataset_params, split='train', data_dir="data"):
+def load_single_sample_Make3D(img_name, dataset_params, split='train', data_dir="data", verbose=False):
     """Load a single Make3D RGB image and its ground-truth depth map.
 
     Camera parameters (f, D, ps) are read from EXIF and image dimensions
@@ -247,6 +249,8 @@ def load_single_sample_Make3D(img_name, dataset_params, split='train', data_dir=
         Root data directory containing the 'Make3D/' subdirectory.
     split : str
         Dataset split: 'train' or 'test'.
+    verbose : bool
+        Print loading progress.
 
     Returns
     -------
@@ -300,7 +304,7 @@ _MOBILE_DEPTH_CALIB_NAME_MAP = {
 }
 
 
-def _find_mobile_depth_example_dir(focal_stack_dir, example_name):
+def _find_mobile_depth_example_dir(focal_stack_dir, example_name, verbose=False):
     """Search for a subdirectory named example_name within focal_stack_dir.
 
     Parameters
@@ -309,6 +313,8 @@ def _find_mobile_depth_example_dir(focal_stack_dir, example_name):
         Root directory containing per-scene subdirectories.
     example_name : str
         Name of the example scene to find.
+    verbose : bool
+        Print the path when found.
 
     Returns
     -------
@@ -325,7 +331,8 @@ def _find_mobile_depth_example_dir(focal_stack_dir, example_name):
         if os.path.isdir(subdir):
             candidate = os.path.join(subdir, example_name)
             if os.path.isdir(candidate):
-                print("Found at:", os.path.abspath(candidate))
+                if verbose:
+                    print("Found at:", os.path.abspath(candidate))
                 return candidate
     raise FileNotFoundError(f"Example '{example_name}' not found in {focal_stack_dir}")
 
@@ -387,7 +394,7 @@ def _load_mobile_depth_calibration(example_name, data_path):
     calib_dir : str
         Path to the resolved calibration directory, used to locate the depth
         and scale result files.
-    Df : ndarray
+    Zf : ndarray
         Focus distances.
     f : float
         Focal length.
@@ -411,17 +418,17 @@ def _load_mobile_depth_calibration(example_name, data_path):
 
     assert len(set(apertures)) == 1, "Expected consistent aperture across all focal planes"
 
-    Df = np.array(focal_depths, dtype=np.float32)  # unitless
+    Zf = np.array(focal_depths, dtype=np.float32)  # unitless
     f = focal_length                                # unitless
     D = set(apertures).pop()                        # unitless, confirmed by Supasorn
 
-    return calib_dir, Df, f, D
+    return calib_dir, Zf, f, D
 
 
-def load_single_sample_MobileDepth(example_name, dataset_params, res="half", data_dir="data"):
+def load_single_sample_MobileDepth(example_name, dataset_params, res="half", data_dir="data", verbose=False):
     """Load a MobileDepth focal stack with calibration data and depth result.
 
-    Camera parameters (Df, f, D) from the per-scene calibration file are
+    Camera parameters (Zf, f, D) from the per-scene calibration file are
     set on *dataset_params* in place.
 
     Parameters
@@ -430,12 +437,14 @@ def load_single_sample_MobileDepth(example_name, dataset_params, res="half", dat
         Scene name.  Must be one of: keyboard, bottles, fruits, metals,
         plants, telephone, window, largemotion, smallmotion, zeromotion, balls.
     dataset_params : DatasetParams
-        Camera/scene parameters; ``Df``, ``f``, and ``D`` are populated
+        Camera/scene parameters; ``Zf``, ``f``, and ``D`` are populated
         from calibration data.
     res : str
         Resolution: 'full' or 'half' (default).
     data_dir : str
         Root data directory.
+    verbose : bool
+        Print loading progress.
 
     Returns
     -------
@@ -453,14 +462,14 @@ def load_single_sample_MobileDepth(example_name, dataset_params, res="half", dat
     data_path = os.path.join(_resolve_data_dir(data_dir), 'MobileDepth')
     focal_stack_dir = os.path.join(data_path, 'aligned-focus-stack', 'Aligned')
 
-    example_dir = _find_mobile_depth_example_dir(focal_stack_dir, example_name)
+    example_dir = _find_mobile_depth_example_dir(focal_stack_dir, example_name, verbose=verbose)
     resize_frac = 2 if res == 'half' else 1
     defocus_stack = _load_mobile_depth_focal_stack(example_dir, resize_frac)
 
-    calib_dir, Df, f, D = _load_mobile_depth_calibration(example_name, data_path)
+    calib_dir, Zf, f, D = _load_mobile_depth_calibration(example_name, data_path)
 
-    order = np.argsort(Df)
-    dataset_params.Df = Df[order]
+    order = np.argsort(Zf)
+    dataset_params.Zf = Zf[order]
     dataset_params.f = f
     dataset_params.D = D
     defocus_stack = defocus_stack[order]

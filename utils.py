@@ -442,7 +442,7 @@ def _resolve_path(path):
     return os.path.join(_MODULE_DIR, path)
 
 
-def create_experiment_folder(experiment_name, base_folder="experiments"):
+def create_experiment_folder(experiment_name, base_folder="experiments", verbose=False):
     """
     Create a timestamped folder for experiment results.
 
@@ -450,6 +450,7 @@ def create_experiment_folder(experiment_name, base_folder="experiments"):
         experiment_name: Name of the experiment
         base_folder: Base directory for experiments (default: "experiments").
             Relative paths are resolved against the dfd/ directory.
+        verbose: Print folder creation message.
 
     Returns:
         str: Path to created experiment folder
@@ -459,7 +460,8 @@ def create_experiment_folder(experiment_name, base_folder="experiments"):
     experiment_folder = os.path.join(_resolve_path(base_folder), folder_name)
     os.makedirs(experiment_folder)
 
-    print(f"Created experiment folder: {experiment_folder}")
+    if verbose:
+        print(f"Created experiment folder: {experiment_folder}")
     return experiment_folder
 
 

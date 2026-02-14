@@ -101,7 +101,7 @@ def test_computer_output_shape():
     width, height = 10, 12
     dpt = np.full((width, height), 2.0, dtype=np.float32)
     r = forward_model.computer(dpt, dataset_params)
-    assert r.shape == (width, height, len(dataset_params.Df))
+    assert r.shape == (width, height, len(dataset_params.Zf))
 
 
 def test_computer_all_values_above_thresh():
@@ -114,7 +114,7 @@ def test_computer_all_values_above_thresh():
 def test_computer_at_focus_clamped_to_thresh():
     # When depth equals a focal plane distance, CoC = 0, so r is clamped to thresh
     width, height = 4, 4
-    dpt = np.full((width, height), dataset_params.Df[0], dtype=np.float32)
+    dpt = np.full((width, height), dataset_params.Zf[0], dtype=np.float32)
     r = forward_model.computer(dpt, dataset_params)
     assert np.allclose(r[:, :, 0], dataset_params.thresh)
 
@@ -157,15 +157,15 @@ def test_computeG_symmetric():
 
 def test_buildA_returns_correct_number_of_matrices():
     width, height = 10, 10
-    dpt = np.full((width, height), dataset_params.Df[0], dtype=np.float32)
+    dpt = np.full((width, height), dataset_params.Zf[0], dtype=np.float32)
     u, v, row, col, mask = forward_model.precompute_indices(width, height, MAX_KERNEL_SIZE)
     A_stack = forward_model.buildA(dpt, u, v, row, col, mask, dataset_params)
-    assert len(A_stack) == len(dataset_params.Df)
+    assert len(A_stack) == len(dataset_params.Zf)
 
 
 def test_buildA_matrix_shape():
     width, height = 10, 10
-    dpt = np.full((width, height), dataset_params.Df[0], dtype=np.float32)
+    dpt = np.full((width, height), dataset_params.Zf[0], dtype=np.float32)
     u, v, row, col, mask = forward_model.precompute_indices(width, height, MAX_KERNEL_SIZE)
     A_stack = forward_model.buildA(dpt, u, v, row, col, mask, dataset_params)
     for A in A_stack:
@@ -177,7 +177,7 @@ def test_buildA_interior_row_sums_near_one():
     width, height = 20, 20
     K = MAX_KERNEL_SIZE
     lim = K // 2
-    dpt = np.full((width, height), dataset_params.Df[0], dtype=np.float32)
+    dpt = np.full((width, height), dataset_params.Zf[0], dtype=np.float32)
     u, v, row, col, mask = forward_model.precompute_indices(width, height, MAX_KERNEL_SIZE)
     A_stack = forward_model.buildA(dpt, u, v, row, col, mask, dataset_params)
     A = A_stack[0].toarray()
@@ -192,8 +192,8 @@ def test_buildA_interior_row_sums_near_one():
 
 def test_forward_output_shape():
     width, height = 10, 12
-    fs = len(dataset_params.Df)
-    dpt = np.full((width, height), dataset_params.Df[0], dtype=np.float32)
+    fs = len(dataset_params.Zf)
+    dpt = np.full((width, height), dataset_params.Zf[0], dtype=np.float32)
     aif = np.ones((width, height, 3), dtype=np.float32)
     indices = forward_model.precompute_indices(width, height, MAX_KERNEL_SIZE)
     stack = forward_model.forward(dpt, aif, dataset_params, MAX_KERNEL_SIZE, indices=indices)
@@ -202,7 +202,7 @@ def test_forward_output_shape():
 
 def test_forward_zero_aif_gives_zero():
     width, height = 10, 10
-    dpt = np.full((width, height), dataset_params.Df[0], dtype=np.float32)
+    dpt = np.full((width, height), dataset_params.Zf[0], dtype=np.float32)
     aif = np.zeros((width, height, 3), dtype=np.float32)
     indices = forward_model.precompute_indices(width, height, MAX_KERNEL_SIZE)
     stack = forward_model.forward(dpt, aif, dataset_params, MAX_KERNEL_SIZE, indices=indices)
@@ -215,7 +215,7 @@ def test_forward_constant_aif_interior_preserved():
     K = MAX_KERNEL_SIZE
     lim = K // 2
     constant_val = 128.0
-    dpt = np.full((width, height), dataset_params.Df[0], dtype=np.float32)
+    dpt = np.full((width, height), dataset_params.Zf[0], dtype=np.float32)
     aif = np.full((width, height, 3), constant_val, dtype=np.float32)
     indices = forward_model.precompute_indices(width, height, MAX_KERNEL_SIZE)
     stack = forward_model.forward(dpt, aif, dataset_params, MAX_KERNEL_SIZE, indices=indices)
@@ -227,7 +227,7 @@ def test_forward_constant_aif_interior_preserved():
 def test_forward_deterministic():
     width, height = 8, 8
     rng = np.random.default_rng(0)
-    dpt = np.full((width, height), dataset_params.Df[1], dtype=np.float32)
+    dpt = np.full((width, height), dataset_params.Zf[1], dtype=np.float32)
     aif = rng.uniform(0, 255, (width, height, 3)).astype(np.float32)
     indices = forward_model.precompute_indices(width, height, MAX_KERNEL_SIZE)
     stack1 = forward_model.forward(dpt, aif, dataset_params, MAX_KERNEL_SIZE, indices=indices)
@@ -238,10 +238,10 @@ def test_forward_deterministic():
 def test_forward_without_precomputed_indices():
     # forward() should work when indices=None (computes them internally)
     width, height = 8, 8
-    dpt = np.full((width, height), dataset_params.Df[0], dtype=np.float32)
+    dpt = np.full((width, height), dataset_params.Zf[0], dtype=np.float32)
     aif = np.ones((width, height, 3), dtype=np.float32)
     stack = forward_model.forward(dpt, aif, dataset_params, MAX_KERNEL_SIZE)
-    assert stack.shape == (len(dataset_params.Df), width, height, 3)
+    assert stack.shape == (len(dataset_params.Zf), width, height, 3)
 
 
 # ---------------------------------------------------------------------------
@@ -292,13 +292,13 @@ def test_build_fixed_pattern_csr_equivalent_to_coo():
     width, height = 10, 10
     rng = np.random.default_rng(0)
 
-    gt_dpt = np.full((width, height), dataset_params.Df[1], dtype=np.float32)
+    gt_dpt = np.full((width, height), dataset_params.Zf[1], dtype=np.float32)
     gt_aif = rng.uniform(0, IMAGE_RANGE, (width, height, 3)).astype(np.float32)
     indices = forward_model.precompute_indices(width, height, MAX_KERNEL_SIZE)
     defocus_stack = forward_model.forward(
         gt_dpt, gt_aif, dataset_params, MAX_KERNEL_SIZE, indices=indices)
 
-    fs = len(dataset_params.Df)
+    fs = len(dataset_params.Zf)
     u, v, row, col, mask = indices
 
     sample_data = rng.random(row.size).astype(np.float32)
