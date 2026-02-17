@@ -25,16 +25,13 @@ def compute_pixel_sharpness(image):
     Compute per-pixel sharpness measure using gradient-based metric.
 
     This sharpness measure combines gradient magnitude with intensity deviation
-    from the mean, as described in Si et al. (2023).
+    from the mean, as described in Si et al. 2023.
 
     Args:
         image: Input image, either grayscale or color
 
     Returns:
         Sharpness map of shape with higher values indicating sharper pixels
-
-    Reference:
-        Si et al. (2023) - DEReD
     """
     if image.ndim == 3:
         grey_image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
@@ -60,7 +57,7 @@ def trivial_aif_initialization(defocus_stack, Zf=None):
     coherence.
 
     Args:
-        defocus_stack: Image stack of shape (N, W, H, C) where N is the number
+        defocus_stack: Image stack of shape (fs, W, H, C) where fs is the number
                       of images with different focus levels
         Zf: Array of focus distances for plot labels (optional).
 
@@ -99,7 +96,7 @@ def compute_defocus_term(image, sigma=1.0, sharpness_measure='laplacian'):
     Compute the defocus term (unary cost) for MRF optimization from Suwajanakorn et al.
 
     Args:
-        image: Input image, either grayscale (H x W) or color (H x W x 3)
+        image: Input image, either grayscale or color
         sigma: Gaussian kernel standard deviation for smoothing (default: 1.0)
         sharpness_measure: Method for computing sharpness, one of:
             - 'laplacian': Absolute value of Laplacian operator
@@ -107,8 +104,8 @@ def compute_defocus_term(image, sigma=1.0, sharpness_measure='laplacian'):
             - 'sobel_grad': Magnitude of Sobel gradients
 
     Returns:
-        Defocus cost map of shape (H x W) with more negative values indicating
-        sharper (less defocused) regions
+        Defocus cost map with more negative values indicating sharper (less defocused)
+        regions
     """
     assert sharpness_measure in ['laplacian', 'log', 'sobel_grad']
 

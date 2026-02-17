@@ -3,12 +3,11 @@ Outlier removal for depth maps estimated via depth-from-defocus.
 
 Two detection strategies are supported:
   - 'tv'       : flags pixels in high total-variation regions of the depth map
-                 (edges / sharp depth discontinuities where DfD is unreliable)
-  - 'constant' : flags pixels in near-constant-colour patches of the all-in-focus
+  - 'constant' : flags pixels in near-constant-color patches of the all-in-focus
                  image (textureless regions where DfD has no signal)
 
 Detected outlier pixels are replaced by the mean depth of their non-outlier
-neighbours within a window of radius MAX_KERNEL_SIZE // 2.
+neighbors within a window of radius MAX_KERNEL_SIZE // 2.
 """
 
 import numpy as np
@@ -53,10 +52,11 @@ def compute_tv_map(image, patch_size):
 
 def find_high_tv_patches(dpt, tv_thresh=0.15, patch_size=7):
     """Return pixels whose local TV exceeds *tv_thresh* in the depth map *dpt*.
+    High-TV regions are indicative of reconstruction artifacts.
 
     Parameters
     ----------
-    dpt : ndarray, shape (H, W)
+    dpt : ndarray, shape (W, H)
         Depth map to analyse.
     tv_thresh : float
         Normalized TV threshold above which a pixel is flagged.
@@ -68,7 +68,7 @@ def find_high_tv_patches(dpt, tv_thresh=0.15, patch_size=7):
     -------
     problem_pixels : ndarray, shape (N, 2)
         (row, col) indices of flagged pixels.
-    tv_map : ndarray, shape (H, W)
+    tv_map : ndarray, shape (W, H)
         Full TV map (useful for visualization / threshold tuning).
     """
     tv_map = compute_tv_map(dpt, patch_size=patch_size)
@@ -81,14 +81,14 @@ def find_high_tv_patches(dpt, tv_thresh=0.15, patch_size=7):
 # ---------------------------------------------------------------------------
 
 def find_constant_patches(aif, diff_thresh=2, patch_size=7):
-    """Return pixels that lie inside near-constant-colour patches of *aif*.
+    """Return pixels that lie inside near-constant-color patches of *aif*.
 
     Textureless regions of the all-in-focus image provide no defocus cue, so
     depth estimates there are unreliable.
 
     Parameters
     ----------
-    aif : ndarray, shape (H, W, 3)
+    aif : ndarray, shape (W, H, 3)
         All-in-focus RGB image.
     diff_thresh : int
         Maximum per-channel (max - min) range within a patch for it to be
@@ -126,8 +126,8 @@ def remove_outliers(dpt, aif, neighborhood_size, patch_type='tv', diff_thresh=2,
     """Detect and replace outlier pixels in *depth_map*.
 
     Outliers are identified by one of two strategies (see module docstring) and
-    then replaced by the mean depth of their non-outlier neighbours within a
-    neighbourhood of radius ``max_kernel_size // 2``.
+    then replaced by the mean depth of their non-outlier neighbors within a
+    neighborhood of radius ``max_kernel_size // 2``.
 
     Parameters
     ----------
@@ -137,7 +137,7 @@ def remove_outliers(dpt, aif, neighborhood_size, patch_type='tv', diff_thresh=2,
         All-in-focus image used by the ``'constant'`` strategy and for plotting.
     neighborhood_size : int
         Side length of the square kernel window (must be odd).
-        Used to determine the replacement neighbourhood radius.
+        Used to determine the replacement neighborhood radius.
     patch_type : {'tv', 'constant'}
         Which detection strategy to use.
     diff_thresh : int
@@ -180,7 +180,7 @@ def remove_outliers(dpt, aif, neighborhood_size, patch_type='tv', diff_thresh=2,
         plt.show()
 
     removed = 0
-    # Radius of the replacement neighbourhood
+    # Radius of the replacement neighborhood
     neighborhood_rad = int((float(neighborhood_size) - 1) / 2.)
     for i, j in problem_pixels:
         patch = []
@@ -199,7 +199,7 @@ def remove_outliers(dpt, aif, neighborhood_size, patch_type='tv', diff_thresh=2,
             removed += 1
             avg_depth = np.array(patch).mean(axis=0, keepdims=True)
             depth_map[i, j] = avg_depth
-            problem_pixel_set.remove((i, j))  # remove so neighbour lookups can use it
+            problem_pixel_set.remove((i, j))  # remove so neighbor lookups can use it
 
     print(removed, '/', len(problem_pixels), 'outliers removed')
 

@@ -1,6 +1,5 @@
-"""Objective functions and depth-search routines for depth-from-defocus.
-
-Provides two search strategies:
+"""Objective functions and depth-search routines for finding the depth map
+with a fixed AIF image.
 
 Grid search
     Evaluates the objective at a dense grid of depth values and returns
@@ -33,9 +32,10 @@ def windowed_mse_gss(depth_map, gt_aif, defocus_stack, dataset_params, max_kerne
     *window_size*, shifts the depth map by (i, j), runs the full
     forward model on the shifted map, and accumulates the per-pixel MSE.
     The final loss at each pixel is the average over all valid offsets,
-    smoothing the loss landscape across spatially-neighbouring depth values.
+    smoothing the loss landscape across spatially-neighboring depth values.
 
     Requires one full forward-model pass per offset — O(window_size²) total.
+    
     Not used in practice; prefer windowed_mse_grid for the grid-search path,
     where the forward pass is already precomputed.
     """
@@ -66,7 +66,7 @@ def windowed_mse_grid(defocus_stack, pred, window_size):
 
     Given a precomputed forward-model prediction, spatially averages the
     per-pixel MSE within a square window of side *window_size*,
-    smoothing the loss landscape across neighbouring pixels.
+    smoothing the loss landscape across neighboring pixels.
     """
     rad = window_size // 2
     _, width, height, _ = defocus_stack.shape
@@ -93,7 +93,7 @@ def windowed_mse_grid_fast(defocus_stack, pred, window_size):
     Intended to be equivalent to windowed_mse_grid but has not yet been
     validated against it — use with caution.
     """
-    # TODO: verify output matches windowed_mse_grid before using in production
+    # TODO: verify output matches (especially boundary conditions)
     mse = np.mean((defocus_stack - pred)**2, axis=(0, -1))
     win_mean = scipy.ndimage.uniform_filter(mse, size=window_size, mode='nearest')
     return win_mean
@@ -107,7 +107,7 @@ def objective_full(dpt, aif, defocus_stack, dataset_params, max_kernel_size,
                    pred=None, windowed=False):
     """Per-pixel reconstruction loss between the observed and predicted focal stacks.
 
-    Runs the forward model for the given depth map and computes the mean
+    Runs the forward model for the given depth map (and AIF) and computes the mean
     squared error against defocus_stack.  When windowed=True, replaces plain
     MSE with a spatially-averaged windowed loss.
 
@@ -118,7 +118,7 @@ def objective_full(dpt, aif, defocus_stack, dataset_params, max_kernel_size,
     Parameters
     ----------
     dpt : ndarray, shape (W, H)
-        Candidate depth map in metres.
+        Candidate depth map in meters.
     aif : ndarray, shape (W, H, C)
         All-in-focus reference image.
     defocus_stack : ndarray, shape (fs, W, H, C)
@@ -153,6 +153,7 @@ def objective_full(dpt, aif, defocus_stack, dataset_params, max_kernel_size,
                                              indices=indices, template_A_stack=template_A_stack)
             loss = windowed_mse_grid(defocus_stack, pred, window_size)
         else:
+            print("Shouldn\'t be here...")
             loss = windowed_mse_gss(dpt, aif, defocus_stack, dataset_params, max_kernel_size,
                                     window_size, indices=indices, template_A_stack=template_A_stack)
     else:

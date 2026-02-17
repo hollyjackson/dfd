@@ -2,10 +2,11 @@
 
 Alternates between two sub-problems until num_epochs iterations are reached:
 
-  AIF step   — given dpt, solve for aif via bounded FISTA
+  AIF step   — given depth, solve for AIF via bounded FISTA
                (Nesterov's accelerated gradient method).
-  Depth step — given aif, solve for dpt via a coarse grid search
-               followed by golden-section refinement.
+  Depth step — given AIF, solve for depth via a coarse grid search
+               followed by golden-section search to refine the per-pixel
+               estimate.
 """
 import math
 import os
@@ -27,10 +28,14 @@ def mse_loss(pred, gt):
 
 def alternating_minimization(
         defocus_stack, dataset_params, max_kernel_size,
-        experiment_folder='experiments', gss_tol=1e-2, gss_window=1, T_0=100,
-        alpha=None, num_epochs=25, nesterov_first=False, save_plots=False, show_plots=False, save_losses=True,
-        depth_init=None, aif_init=None, experiment_name='alt-min', vmin=None, vmax=None,
-        num_Z=100, verbose=True, windowed_mse=False, window_size=None):
+        num_epochs=25, nesterov_first=False,
+        aif_init=None, depth_init=None,
+        num_Z=100, windowed_mse=False, window_size=None,
+        gss_tol=1e-2, gss_window=1,
+        T_0=100, alpha=None,
+        experiment_folder='experiments', experiment_name='alt-min',
+        save_plots=False, show_plots=False, save_losses=True,
+        vmin=None, vmax=None, verbose=True):
     """Run alternating minimization on depth and AIF.
 
     Parameters
@@ -38,11 +43,25 @@ def alternating_minimization(
     defocus_stack : ndarray, shape (fs, W, H, C)
         Observed focal stack.
     dataset_params : DatasetParams
-        Camera/scene parameters.
+        Camera/scene parameters object.
     max_kernel_size : int
         Side length of the square kernel window (must be odd).
-    experiment_folder : str
-        Root directory for saving outputs.
+    num_epochs : int
+        Number of alternating-minimization iterations.
+    nesterov_first : bool
+        If True, run the AIF step before the depth step each iteration.
+    aif_init : ndarray, shape (W, H, C) or None
+        Initial AIF.  Only used when nesterov_first=False.
+    depth_init : ndarray, shape (W, H), scalar, or None
+        Initial depth map.  None → all-ones; scalar → constant map.
+        Only used with nesterov_first=True.
+    num_Z : int
+        Number of depth candidates for the coarse grid search.
+    windowed_mse : bool
+        Use windowed MSE in the grid search.
+    window_size : int or None
+        Side length of the averaging window for the windowed MSE (must be odd).
+        Required when *windowed_mse* is True.
     gss_tol : float
         Convergence tolerance for golden-section search.
     gss_window : int
@@ -50,32 +69,21 @@ def alternating_minimization(
     T_0 : int
         Initial FISTA iteration budget.
     alpha : float or None
-        If set, multiply T_i by alpha each epoch (decay schedule).
-    num_epochs : int
-        Number of alternating-minimization iterations.
-    nesterov_first : bool
-        If True, run the AIF step before the depth step each iteration.
+        If set, multiply T_i by alpha each epoch (should be > 1).
+    experiment_folder : str
+        Root directory for saving outputs.
+    experiment_name : str
+        Subdirectory name for this run's outputs.
     save_plots : bool
         Save intermediate images and loss curves to disk.
     show_plots : bool
-        Display intermediate images interactively.
-    depth_init : ndarray, shape (W, H), scalar, or None
-        Initial depth map.  None → all-ones; scalar → constant map.
-    aif_init : ndarray, shape (W, H, C) or None
-        Initial AIF.  Only used when nesterov_first=False.
-    experiment_name : str
-        Subdirectory name for this run's outputs.
+        Display intermediate images.
+    save_losses : bool
+        Save loss values to a text file.
     vmin, vmax : float or None
-        Depth colormap range for saved plots.
-    num_Z : int
-        Number of depth candidates for the coarse grid search.
+        Depth colormap range for saved and shown plots.
     verbose : bool
         Print progress messages.
-    windowed_mse : bool
-        Use spatially-windowed MSE in the grid search.
-    window_size : int or None
-        Side length of the spatial averaging window (must be odd).
-        Required when *windowed_mse* is True.
 
     Returns
     -------
@@ -127,7 +135,7 @@ def alternating_minimization(
     elif verbose:
         print('Images in range [0-255]')
 
-    # CRITICAL: Precompute sparse matrix structure for the forward model
+    # CRITICAL: Precompute sparse matrix structure and indices for the forward model
     # This builds the fixed sparsity pattern used in all forward/backward passes,
     # speeding up matrix operations throughout the optimization
     indices = forward_model.precompute_indices(width, height, max_kernel_size)
@@ -155,7 +163,7 @@ def alternating_minimization(
         losses.append(loss)
         if verbose:
             # TV (total variation) measures image smoothness - useful for detecting artifacts
-            print('Loss:',loss, ', TV:',utils.total_variation(aif)) # TODO: move this to utils
+            print('Loss:',loss, ', TV:',utils.total_variation(aif))
 
         # Visualize the reconstructed all-in-focus image (normalized to [0,1] for display)
         if save_plots or show_plots:
@@ -177,6 +185,7 @@ def alternating_minimization(
         # Evaluate num_Z uniformly-spaced depth candidates across [min_Z, max_Z] to find
         # the best approximate depth value for each pixel. This gives us a rough depth map
         # and identifies promising regions for refinement.
+        # Uses windowed MSE if enabled.
         t0 = time.time()
         depth_map, Z, min_indices, all_losses = section_search.grid_search(
             aif, defocus_stack, dataset_params, max_kernel_size,
@@ -188,7 +197,7 @@ def alternating_minimization(
 
         # Visualize the coarse depth estimates from grid search
         if save_plots or show_plots:
-            plt.imshow(depth_map)
+            plt.imshow(depth_map, vmin=vmin, vmax=vmax)
             plt.colorbar()
             if save_plots:
                 assert iter_folder is not None
@@ -245,7 +254,7 @@ def alternating_minimization(
     # ============================================================================
 
     # Initialize depth map (dpt): (nesterov_first=True)
-    # - None → uniform depth (all-ones), assumes scene at constant depth initially
+    # - None → uniform depth (all-ones), assumes scene at constant depth of 1 m initially
     # - Scalar → constant depth map with user-specified value
     # - Array → use provided depth initialization
     if nesterov_first:
@@ -260,7 +269,7 @@ def alternating_minimization(
 
     # Initialize all-in-focus image (aif): (nesterov_first=False)
     # Use sharpness-based fusion (based on AIF stitching from Suwajanakorn et al.)
-    # to combine the sharpest regions from each focal plane.
+    # to fuse the sharpest regions from each focal plane.
     if not nesterov_first:
         if aif_init is None:
             if verbose:
@@ -274,7 +283,7 @@ def alternating_minimization(
     # Display the initial estimates for visual verification
     if show_plots:
         if nesterov_first:
-            plt.imshow(dpt)
+            plt.imshow(dpt, vmin=vmin, vmax=vmax)
             plt.title('DPT Initialization')
             plt.show()
         else:
@@ -328,7 +337,7 @@ def alternating_minimization(
         # Store current depth estimate
         last_dpt = np.copy(dpt)
 
-        # Decay schedule for FISTA iteration budget (if alpha is provided)
+        # Update FISTA iteration budget (if alpha is provided)
         if alpha is not None:
             T_i = int(T_i * alpha)
             if verbose:
@@ -362,6 +371,7 @@ def alternating_minimization(
             plt.savefig(os.path.join(experiment_folder,'log_loss.png'))
             plt.close()
 
+        # Save losses to text file in experiment folder
         if save_losses:
             with open(os.path.join(experiment_folder,"losses.txt"), "w") as file:
                 for j in range(len(losses)):

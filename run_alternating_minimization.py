@@ -1,28 +1,28 @@
 """
 Unified Depth-from-Defocus Pipeline
 
-This script runs the coordinate descent depth-from-defocus algorithm on images
-from Make3D, Mobile Depth, or NYUv2 datasets.
+This script runs the alternating minimization depth-from-defocus algorithm on images
+from NYUv2, Make3D, or mobile phone focal stacks.
 
 Usage:
-    # Make3D
+    # NYUv2 (Silberman et al. 2012)
+    python run_alternating_minimization.py nyuv2 <split> <image_number> [--verbose]
+    
+    # Make3D (Saxena et al. 2005, 2009)
     python run_alternating_minimization.py make3d <split> <img_name> [--verbose]
 
-    # Mobile Depth
+    # Mobile phone focal stacks (Suwajanakorn et al. 2015)
     python run_alternating_minimization.py mobiledepth <example_name> [--verbose]
 
-    # NYUv2
-    python run_alternating_minimization.py nyuv2 <split> <image_number> [--verbose]
-
 Options:
-    --verbose      Print configuration and dataset parameters
-    --show_plots   Display plots interactively during optimization
+    --verbose      Verbose mode, prints configuration parameters and optimization steps
+    --show_plots   Display plots plt.show() during optimization
     --save_plots   Save plots to experiment folder
 
 Examples:
-    python run_alternating_minimization.py make3d train img-math7-p-282t0.jpg
+    python run_alternating_minimization.py nyuv2 test 0045
+    python run_alternating_minimization.py make3d train img-math7-p-282t0.jpg --save_plots
     python run_alternating_minimization.py mobiledepth keyboard --verbose
-    python run_alternating_minimization.py nyuv2 test 123 --save_plots
     python run_alternating_minimization.py make3d test img-op29-p-295t000.jpg --verbose --show_plots
 """
 
@@ -45,6 +45,28 @@ from config import MAKE3D, MOBILE_DEPTH, NYUV2
 # =============================================================================
 # Dataset-Specific Loading Functions
 # =============================================================================
+
+def load_nyuv2(image_number, split, config, verbose=False):
+    """Load NYUv2 ground truth and generate synthetic defocus stack."""
+    dataset_params = DatasetParams.for_NYUv2()
+
+    # Load ground truth AIF and depth
+    gt_aif, gt_dpt = dataset_loader.load_single_sample_NYUv2(
+        sample=image_number, set=split, res='half',
+        data_dir=config.data_dir, verbose=verbose
+    )
+
+    # Set adaptive kernel size
+    width, height = gt_dpt.shape
+    max_kernel_size = utils.kernel_size_heuristic(width, height)
+    if verbose:
+        print(f'Adaptive kernel size set to {max_kernel_size}')
+
+    # Generate synthetic defocus stack
+    defocus_stack = forward_model.forward(gt_dpt, gt_aif, dataset_params, max_kernel_size)
+
+    return defocus_stack, dataset_params, max_kernel_size, gt_aif, gt_dpt
+
 
 def load_make3d(img_name, split, config, verbose=False):
     """Load Make3D ground truth and generate synthetic defocus stack."""
@@ -69,7 +91,7 @@ def load_make3d(img_name, split, config, verbose=False):
 
 
 def load_mobiledepth(example_name, config, verbose=False):
-    """Load and preprocess defocus stack from Mobile Depth dataset."""
+    """Load and preprocess defocus stack from mobile phone focal stacks dataset."""
     # Validate example name
     assert example_name in config.valid_examples, \
         f"Invalid example name. Must be one of: {config.valid_examples}"
@@ -95,28 +117,6 @@ def load_mobiledepth(example_name, config, verbose=False):
         print(f'Adaptive kernel size set to {max_kernel_size}')
 
     return defocus_stack, dataset_params, max_kernel_size, None, None
-
-
-def load_nyuv2(image_number, split, config, verbose=False):
-    """Load NYUv2 ground truth and generate synthetic defocus stack."""
-    dataset_params = DatasetParams.for_NYUv2()
-
-    # Load ground truth AIF and depth
-    gt_aif, gt_dpt = dataset_loader.load_single_sample_NYUv2(
-        sample=image_number, set=split, res='half',
-        data_dir=config.data_dir, verbose=verbose
-    )
-
-    # Set adaptive kernel size
-    width, height = gt_dpt.shape
-    max_kernel_size = utils.kernel_size_heuristic(width, height)
-    if verbose:
-        print(f'Adaptive kernel size set to {max_kernel_size}')
-
-    # Generate synthetic defocus stack
-    defocus_stack = forward_model.forward(gt_dpt, gt_aif, dataset_params, max_kernel_size)
-
-    return defocus_stack, dataset_params, max_kernel_size, gt_aif, gt_dpt
 
 
 # =============================================================================
@@ -182,7 +182,25 @@ def main():
     dataset = sys.argv[1].lower()
 
     # Dataset-specific argument parsing and loading
-    if dataset == 'make3d':
+    if dataset == 'nyuv2':
+        if len(sys.argv) != 4:
+            print("Usage: python run_alternating_minimization.py nyuv2 <split> <image_number>")
+            print("  split: 'train' or 'test'")
+            print("  image_number: Image number from the dataset")
+            sys.exit(1)
+
+        split = sys.argv[2]
+        image_number = sys.argv[3]
+        config = NYUV2
+        experiment_name = config.get_experiment_name(split, image_number)
+        verbose_mode = verbose_mode or config.verbose
+
+        if verbose_mode:
+            print(f"Running NYUv2 experiment: {experiment_name}")
+            print("Loading ground truth and generating defocus stack...")
+        defocus_stack, dataset_params, max_kernel_size, gt_aif, gt_dpt = load_nyuv2(image_number, split, config, verbose=verbose_mode)
+
+    elif dataset == 'make3d':
         if len(sys.argv) != 4:
             print("Usage: python run_alternating_minimization.py make3d <split> <img_name>")
             print("  split: 'train' or 'test'")
@@ -193,6 +211,7 @@ def main():
         img_name = sys.argv[3]
         config = MAKE3D
         experiment_name = config.get_experiment_name(split, img_name)
+        verbose_mode = verbose_mode or config.verbose
 
         if verbose_mode:
             print(f"Running Make3D experiment: {experiment_name}")
@@ -208,28 +227,12 @@ def main():
         example_name = sys.argv[2]
         config = MOBILE_DEPTH
         experiment_name = config.get_experiment_name(example_name)
+        verbose_mode = verbose_mode or config.verbose
 
         if verbose_mode:
             print(f"Running Mobile Depth experiment: {experiment_name}")
             print("Loading defocus stack...")
         defocus_stack, dataset_params, max_kernel_size, gt_aif, gt_dpt = load_mobiledepth(example_name, config, verbose=verbose_mode)
-
-    elif dataset == 'nyuv2':
-        if len(sys.argv) != 4:
-            print("Usage: python run_alternating_minimization.py nyuv2 <split> <image_number>")
-            print("  split: 'train' or 'test'")
-            print("  image_number: Image number from the dataset")
-            sys.exit(1)
-
-        split = sys.argv[2]
-        image_number = sys.argv[3]
-        config = NYUV2
-        experiment_name = config.get_experiment_name(split, image_number)
-
-        if verbose_mode:
-            print(f"Running NYUv2 experiment: {experiment_name}")
-            print("Loading ground truth and generating defocus stack...")
-        defocus_stack, dataset_params, max_kernel_size, gt_aif, gt_dpt = load_nyuv2(image_number, split, config, verbose=verbose_mode)
 
     else:
         print(f"Unknown dataset: {dataset}")
@@ -268,7 +271,7 @@ def main():
         'num_Z': config.num_z,
         'T_0': config.t_0,
         'alpha': config.alpha,
-        'verbose': verbose_mode,  # Override config.verbose with --verbose flag
+        'verbose': verbose_mode,
         'windowed_mse': config.use_windowed_mse,
     }
 

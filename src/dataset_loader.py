@@ -3,11 +3,12 @@
 Three datasets are supported:
 
 NYUv2
-    Indoor RGB-D images.  Camera parameters are fixed in ``DatasetParams.for_NYUv2()``.
+    Camera parameters are fixed in ``DatasetParams.for_NYUv2()``, based on
+    those used by Si et al. 2023.
 
 Make3D
-    Outdoor images with LIDAR depth.  Camera parameters (focal length,
-    aperture, pixel size) are read from EXIF and returned by the loader.
+    Camera parameters (focal length, aperture, pixel size) are read from EXIF
+    and returned by the loader.
 
 MobileDepth (mobile phone focal stacks)
     Phone-captured focal stacks with per-scene calibration files.
@@ -24,6 +25,7 @@ import exifread
 from scipy.io import loadmat
 
 import utils
+from config import MOBILE_DEPTH
 
 # Resolve relative data_dir paths against this module's directory (dfd/)
 # so that data_dir='data' always means dfd/data/ regardless of caller cwd.
@@ -42,10 +44,10 @@ def _resolve_data_dir(data_dir):
 # ---------------------------------------------------------------------------
 
 def load_NYUv2_dpt(path_to_file, resize_frac=2):
-    """Load a NYUv2 depth image and convert to metres.
+    """Load a NYUv2 depth image and convert to metees.
 
     Pixel values are stored in 0.1 mm units; dividing by 1e4 converts to
-    metres.  Depth is clipped to [0.1, 10.0] m after scaling.
+    meters.  Depth is clipped to [0.1, 10.0] m after scaling.
 
     Parameters
     ----------
@@ -57,7 +59,7 @@ def load_NYUv2_dpt(path_to_file, resize_frac=2):
     Returns
     -------
     dpt : ndarray, shape (width, height)
-        Depth map in metres, dtype float32.
+        Depth map in meters, dtype float32.
     """
     dpt = skimage.io.imread(path_to_file).astype(np.float32)
     width, height = dpt.shape
@@ -74,7 +76,7 @@ def load_NYUv2_dpt(path_to_file, resize_frac=2):
     return dpt
 
 def load_NYUv2_aif(path_to_file, resize_frac=2):
-    """Load a NYUv2 RGB image and normalise to [0, 1].
+    """Load a NYUv2 RGB image and normalize to [0, 1].
 
     Parameters
     ----------
@@ -121,7 +123,7 @@ def load_single_sample_NYUv2(data_dir='data', sample='0045', set='train', res='h
     aif : ndarray, shape (width, height, 3)
         All-in-focus image [0, 255].
     dpt : ndarray, shape (width, height)
-        Depth map in metres.
+        Depth map in meters.
     """
     assert res in ('full', 'half')
 
@@ -151,14 +153,14 @@ def _load_make3d_camera_params(img_filename):
     Returns
     -------
     f : float
-        Focal length in metres.
+        Focal length in meters.
     D : float
-        Aperture diameter in metres.
+        Aperture diameter in meters.
     """
     with open(img_filename, 'rb') as fh:
         tags = exifread.process_file(fh)
     focal_length_mm = utils.exif_to_float(tags.get("EXIF FocalLength"))
-    f = focal_length_mm * 1e-3
+    f = focal_length_mm * 1e-3 # Convert mm to m
     f_number = utils.exif_to_float(tags.get("EXIF FNumber"))
     D = f / f_number
     return f, D
@@ -168,8 +170,7 @@ def _load_make3d_image(img_filename):
     """Load and resize a Make3D RGB image to (460, 345).
 
     The target resolution of (460, 345) follows Saxena et al.  Pixel size
-    is derived from the Canon PowerShot S40 sensor width and the ratio of
-    original to resized pixel count.
+    is a guess.
 
     Parameters
     ----------
@@ -181,7 +182,7 @@ def _load_make3d_image(img_filename):
     aif : ndarray, shape (460, 345, 3)
         RGB image [0, 255], dtype float32.
     ps : float
-        Estimated pixel size in metres.
+        Estimated pixel size in meters.
     """
     # one image in the dataset requires EXIF-based rotation correction
     if os.path.basename(img_filename) == "img-op29-p-295t000.jpg":
@@ -214,8 +215,8 @@ def _load_make3d_image(img_filename):
 def _load_make3d_depth(dpt_filename):
     """Load Make3D depth from a .mat file.
 
-    The .mat file contains 'Position3DGrid' with shape (H, W, 4); index 3
-    is the Z (depth) channel in metres.
+    The .mat file contains 'Position3DGrid'; index 3 is the Z (depth) channel
+    in meters.
 
     Parameters
     ----------
@@ -224,8 +225,8 @@ def _load_make3d_depth(dpt_filename):
 
     Returns
     -------
-    dpt : ndarray, shape (H, W)
-        Depth map in metres, dtype float32.
+    dpt : ndarray, shape (W, H)
+        Depth map in meters, dtype float32.
     """
     data = loadmat(dpt_filename)
     dpt = np.array(data["Position3DGrid"], dtype=np.float32)
@@ -257,7 +258,7 @@ def load_single_sample_Make3D(img_name, dataset_params, split='train', data_dir=
     aif : ndarray,
         RGB image [0, 255].
     dpt : ndarray,
-        Depth map in metres.
+        Depth map in meters.
     """
     assert split in ('train', 'test')
     img_subdir = 'Test134Img' if split == 'test' else 'Train400Img'
@@ -289,11 +290,11 @@ def load_single_sample_Make3D(img_name, dataset_params, split='train', data_dir=
 # MobileDepth
 # ---------------------------------------------------------------------------
 
-# Examples without calibration data (not loadable): "bucket", "kitchen"
-_MOBILE_DEPTH_VALID_EXAMPLES = [
-    "keyboard", "bottles", "fruits", "metals", "plants",
-    "telephone", "window", "largemotion", "smallmotion", "zeromotion", "balls",
-]
+# # Examples without calibration data (not loadable): "bucket", "kitchen"
+# _MOBILE_DEPTH_VALID_EXAMPLES = [
+#     "keyboard", "bottles", "fruits", "metals", "plants",
+#     "telephone", "window", "largemotion", "smallmotion", "zeromotion", "balls",
+# ]
 
 # Calibration folder names differ from example names for some scenes
 _MOBILE_DEPTH_CALIB_NAME_MAP = {
@@ -340,8 +341,8 @@ def _find_mobile_depth_example_dir(focal_stack_dir, example_name, verbose=False)
 def _load_mobile_depth_focal_stack(example_dir, resize_frac):
     """Load and stack aligned focal stack JPEG images from a directory.
 
-    Filenames starting with 'a' and ending with '.jpg' are collected and
-    sorted alphabetically to establish focal plane order.
+    Filenames starting with 'a' (for ailgned) and ending with '.jpg' are
+    collected and sorted alphabetically to establish focal plane order.
 
     Parameters
     ----------
@@ -353,7 +354,7 @@ def _load_mobile_depth_focal_stack(example_dir, resize_frac):
     Returns
     -------
     defocus_stack : ndarray, shape (fs, width, height, 3)
-        Focal stack normalised to [0, 1], dtype float32.
+        Focal stack in range [0, 255], dtype float32.
     """
     paths = sorted(
         os.path.join(example_dir, fname)
@@ -418,9 +419,9 @@ def _load_mobile_depth_calibration(example_name, data_path):
 
     assert len(set(apertures)) == 1, "Expected consistent aperture across all focal planes"
 
-    Zf = np.array(focal_depths, dtype=np.float32)  # unitless
-    f = focal_length                                # unitless
-    D = set(apertures).pop()                        # unitless, confirmed by Supasorn
+    Zf = np.array(focal_depths, dtype=np.float32)   # unitless/in pixels
+    f = focal_length                                # unitless/in pixels
+    D = set(apertures).pop()                        # unitless/in pixels, confirmed by Supasorn
 
     return calib_dir, Zf, f, D
 
@@ -449,14 +450,14 @@ def load_single_sample_MobileDepth(example_name, dataset_params, res="half", dat
     Returns
     -------
     defocus_stack : ndarray, shape (fs, width, height, 3)
-        Aligned focal stack normalised to [0, 1].
+        Aligned focal stack in range [0, 255].
     dpt_result : ndarray, shape (H, W)
         Pre-computed depth estimate from the MobileDepth calibration,
         dtype float32.
     scale_mat : ndarray
         Scale matrix from the calibration data.
     """
-    assert example_name in _MOBILE_DEPTH_VALID_EXAMPLES
+    assert example_name in MOBILE_DEPTH.valid_examples
     assert res in ('full', 'half')
 
     data_path = os.path.join(_resolve_data_dir(data_dir), 'MobileDepth')

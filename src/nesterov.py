@@ -9,8 +9,8 @@ problem:
 where A(Z) is the depth-dependent sparse blur operator (built in forward_model),
 x is the vectorised all-in-focus image, and b is the observed focal stack.
 
-Nesterov momentum (FISTA sequence) is used for acceleration.  The step size is
-set to 1/L where L ≈ ||A||² is estimated via power iteration.
+Nesterov momentum is used for acceleration.  The step size is set to 1/L where
+L ≈ ||A||² is estimated via power iteration.
 """
 
 import numpy as np
@@ -31,7 +31,7 @@ def buildb(defocus_stack):
 
     Parameters
     ----------
-    defocus_stack : list of ndarray, each shape (H, W, 3)
+    defocus_stack : list of ndarray, each shape (W, H, 3)
         Observed defocused images for each focal setting.
 
     Returns
@@ -105,9 +105,9 @@ def bounded_fista_3d(dpt, defocus_stack, dataset_params, max_kernel_size,
 
     Parameters
     ----------
-    dpt : ndarray, shape (H, W)
+    dpt : ndarray, shape (W, H)
         Current depth map estimate (held fixed during this call).
-    defocus_stack : list of ndarray, each shape (H, W, 3)
+    defocus_stack : list of ndarray, each shape (W, H, 3)
         Observed focal stack.
     dataset_params : DatasetParams
         Camera/scene parameters (passed to ``forward_model``).
@@ -128,7 +128,7 @@ def bounded_fista_3d(dpt, defocus_stack, dataset_params, max_kernel_size,
 
     Returns
     -------
-    aif : ndarray, shape (H, W, 3)
+    aif : ndarray, shape (W, H, 3)
         Reconstructed all-in-focus image, clipped to [0, IMAGE_RANGE].
     """
     if verbose:
@@ -136,6 +136,7 @@ def bounded_fista_3d(dpt, defocus_stack, dataset_params, max_kernel_size,
 
     width, height = dpt.shape
     if indices is None:
+        print('Precomputing indices...this is time-consuming, pass in if possible to avoid unnecessary computation')
         u, v, row, col, mask = forward_model.precompute_indices(width, height, max_kernel_size)
     else:
         u, v, row, col, mask = indices
@@ -167,7 +168,7 @@ def bounded_fista_3d(dpt, defocus_stack, dataset_params, max_kernel_size,
     L = approx_Lipschitz_constant(A, A_T)
     eta = 1.0 / L
 
-    # Initialise primal variable x and momentum auxiliary variable y
+    # Initialise primal variable aif (x) and momentum auxiliary variable aif_guess (y)
     aif = np.zeros((width * height, 3), dtype=np.float32)
     aif_guess = aif.copy()
 

@@ -1,9 +1,4 @@
-"""Dataset-specific camera, sensor, and scene parameters.
-
-Groups all per-dataset constants that were previously stored as mutable
-module-level globals in ``globals.py``.  Each dataset has a factory
-method that returns a pre-filled instance.
-"""
+"""Dataset-specific camera, sensor, and scene parameters."""
 
 from dataclasses import dataclass, field
 
@@ -14,13 +9,13 @@ import numpy as np
 class DatasetParams:
     """Camera, sensor, and scene parameters for a single dataset."""
 
-    f: float = 0.0              # focal length (m or unitless for MobileDepth)
-    D: float = 0.0              # aperture diameter (m or unitless for MobileDepth)
+    f: float = 0.0              # focal length (m or pixels for MobileDepth)
+    D: float = 0.0              # aperture diameter (m or pixels for MobileDepth)
     Zf: np.ndarray = field(default_factory=lambda: np.array([], dtype=np.float32))
-    ps: float = 0.0             # pixel size (m or unitless for MobileDepth)
-    min_Z: float = 0.0          # scene depth range lower bound
-    max_Z: float = 0.0          # scene depth range upper bound
-    thresh: float = 0.0         # forward model CoC threshold
+    ps: float = 0.0             # pixel size (m or pixels for MobileDepth)
+    min_Z: float = 0.0          # scene depth range lower bound (m)
+    max_Z: float = 0.0          # scene depth range upper bound (m)
+    thresh: float = 0.0         # forward model CoC threshold (pixels)
 
     @staticmethod
     def for_NYUv2():

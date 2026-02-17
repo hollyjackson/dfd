@@ -11,9 +11,9 @@ camera parameters in a :class:`DatasetParams` instance.
 
 Public API
 ----------
-precompute_indices  -- build pixel-shift index tables (call once per image size)
+precompute_indices  -- build pixel-shift index tables (call once per image size!)
 buildA              -- assemble the sparse blur operator stack for a depth map
-forward             -- apply the full forward model: AIF -> defocus stack
+forward             -- apply the full forward model: AIF + depth -> defocus stack
 """
 import numpy as np
 import scipy
@@ -49,11 +49,11 @@ def compute_u_v(max_kernel_size):
 
 
 def compute_shifted_indices(width, height, max_kernel_size):
-    """Return per-pixel neighbour index arrays for the K×K kernel window.
+    """Return per-pixel neighbor index arrays for the K×K kernel window.
 
     For each pixel (i, j) and each kernel offset (di, dj) within the
     K×K window, stores the absolute row and column index of the
-    corresponding neighbour.
+    corresponding neighbor.
 
     Parameters
     ----------
@@ -65,7 +65,7 @@ def compute_shifted_indices(width, height, max_kernel_size):
     Returns
     -------
     row_indices, col_indices : ndarray, shape (width, height, K, K)
-        Absolute row / column indices for each pixel's kernel neighbours.
+        Absolute row / column indices for each pixel's kernel neighbors.
     """
     lim = max_kernel_size // 2
 
@@ -91,14 +91,14 @@ def generate_mask(row_indices, col_indices, width, height):
     Parameters
     ----------
     row_indices, col_indices : ndarray, shape (width, height, K, K)
-        Absolute neighbour indices from ``compute_shifted_indices``.
+        Absolute neighbor indices from ``compute_shifted_indices``.
     width, height : int
         Image dimensions.
 
     Returns
     -------
     mask : ndarray of bool, shape (width * height * K * K,)
-        True where the neighbour index falls within the image boundary.
+        True where the neighbor index falls within the image boundary.
     """
     condition1 = row_indices.flatten() < 0
     condition2 = row_indices.flatten() >= width
@@ -112,7 +112,7 @@ def generate_mask(row_indices, col_indices, width, height):
 
 
 def compute_mask_flattened_indices(row_indices, col_indices, mask, width, height, max_kernel_size):
-    """Convert 2-D neighbour indices to flat CSR (row, col) index arrays.
+    """Convert 2-D neighbor indices to flat CSR (row, col) index arrays.
 
     Parameters
     ----------
@@ -126,7 +126,7 @@ def compute_mask_flattened_indices(row_indices, col_indices, mask, width, height
     Returns
     -------
     row, col : ndarray of int
-        Flattened source-pixel and neighbour indices for CSR construction,
+        Flattened source-pixel and neighbor indices for CSR construction,
         with out-of-bounds entries removed.
     """
 
@@ -149,7 +149,8 @@ def precompute_indices(width, height, max_kernel_size):
 
     Combines ``compute_u_v``, ``compute_shifted_indices``, ``generate_mask``,
     and ``compute_mask_flattened_indices`` into a single call.  The result can
-    be cached and reused for any depth map of the same spatial dimensions.
+    (and should!) be cached and reused for any depth map of the same spatial
+    dimensions.
 
     Parameters
     ----------
@@ -184,7 +185,7 @@ def computer(dpt, dataset_params):
 
     Uses the thin-lens circle-of-confusion formula::
 
-        CoC = D * |z - Zf| / z * f / (Zf - f)
+        CoC = D * |Z - Zf| / Z * f / (Zf - f)
         r   = CoC / 2 / ps
 
     where ``D``, ``f``, ``ps``, ``thresh`` are camera parameters from
@@ -193,7 +194,7 @@ def computer(dpt, dataset_params):
     Parameters
     ----------
     dpt : ndarray, shape (width, height)
-        Depth map in metres.
+        Depth map in meters.
     dataset_params : DatasetParams
         Camera/scene parameters (uses ``Zf``, ``D``, ``f``, ``ps``, ``thresh``).
 
@@ -220,7 +221,7 @@ def computer(dpt, dataset_params):
 
 
 def computeG(r, u, v, eps=1e-8):
-    """Compute normalised 2-D Gaussian blur kernels for each pixel and focal plane.
+    """Compute normalized 2-D Gaussian blur kernels for each pixel and focal plane.
 
     Parameters
     ----------
@@ -232,9 +233,9 @@ def computeG(r, u, v, eps=1e-8):
     Returns
     -------
     G : ndarray, shape (width, height, fs, K, K)
-        Normalised Gaussian kernels.
+        normalized Gaussian kernels.
     norm : ndarray
-        Per-kernel normalisation factors (sum before division).
+        Per-kernel normalization factors (sum before division).
     """
     # compute Gaussian kernels
     G = np.exp(-(u**2 + v**2) / (2 * (r+eps)**2))
@@ -327,7 +328,7 @@ def buildA(dpt, u, v, row, col, mask, dataset_params, template_A_stack=None):
     Parameters
     ----------
     dpt : ndarray, shape (width, height)
-        Depth map in metres.
+        Depth map in meters.
     u, v : ndarray
         Kernel coordinate grids from ``precompute_indices``.
     row, col : ndarray of int
@@ -380,15 +381,16 @@ def buildA(dpt, u, v, row, col, mask, dataset_params, template_A_stack=None):
 # ---------------------------------------------------------------------------
 
 def forward(dpt, aif, dataset_params, max_kernel_size, indices=None, template_A_stack=None):
-    """Apply the forward model: AIF image -> defocus stack.
+    """Apply the forward model: AIF image + depth map -> defocus stack.
 
     Computes ``b_i = A_i @ x`` for each focal plane *i*, where ``x`` is the
-    vectorised AIF and ``A_i`` is the blur operator from ``buildA``.
+    vectorised AIF and ``A_i`` is the blur operator from ``buildA`` which is
+    constructed based on the depth map.
 
     Parameters
     ----------
     dpt : ndarray, shape (width, height)
-        Depth map in metres.
+        Depth map in meters.
     aif : ndarray, shape (width, height, 3)
         All-in-focus RGB image.
     dataset_params : DatasetParams
@@ -404,7 +406,7 @@ def forward(dpt, aif, dataset_params, max_kernel_size, indices=None, template_A_
     Returns
     -------
     defocus_stack : ndarray, shape (fs, width, height, 3)
-        Simulated defocus stack for each focal plane.
+        Simulated defocus stack.
     """
     width, height = dpt.shape
 
