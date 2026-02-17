@@ -1,6 +1,10 @@
-data/
+data/*
+!data/example/
+!data/generate_nyuv2_dataset_from_mat.py
 results/
 experiments/
+archive/
+.venv/
 dfd-sparse/
 __pycache__/
 .pytest_cache/

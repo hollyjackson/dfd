@@ -197,7 +197,8 @@ def remove_outliers(dpt, aif, neighborhood_size, patch_type='tv', diff_thresh=2,
                 patch.append(depth_map[i + dx, j + dy])
         if len(patch) != 0:
             removed += 1
-            avg_depth = np.array(patch).mean(axis=0, keepdims=True)
+            # avg_depth = np.array(patch).mean(axis=0, keepdims=True)
+            avg_depth = np.mean(patch)
             depth_map[i, j] = avg_depth
             problem_pixel_set.remove((i, j))  # remove so neighbor lookups can use it
 

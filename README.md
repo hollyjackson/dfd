@@ -87,7 +87,7 @@ Results are saved to `experiments/<dataset>/<experiment_name>_<timestamp>/` cont
 
 ### NYUv2 (Silberman et al. 2012)
 
-Download the following files to `data/` and then run `generate_dataset.py` in the dataset folder:
+Download the following files to `data/` and then run `generate_nyuv2_dataset_from_mat.py` in the dataset folder:
 
 1. [nyu_depth_v2_labeled.mat](http://horatio.cs.nyu.edu/mit/silberman/nyu_depth_v2/nyu_depth_v2_labeled.mat) — labeled NYU Depth v2 dataset
 2. [splits.mat](http://horatio.cs.nyu.edu/mit/silberman/indoor_seg_sup/splits.mat) — official train/test split

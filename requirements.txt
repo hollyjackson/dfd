@@ -8,3 +8,5 @@ exifread
 tqdm
 gco-wrapper
 pytest
+h5py
+tifffile
