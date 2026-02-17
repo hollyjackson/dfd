@@ -1,5 +1,6 @@
 data/*
 !data/example/
+!data/example/**
 !data/generate_nyuv2_dataset_from_mat.py
 results/
 experiments/
@@ -9,7 +10,6 @@ dfd-sparse/
 __pycache__/
 .pytest_cache/
 .ipynb_checkpoints/
-pyGCO
 *.csv
 *.sh
 *.png
