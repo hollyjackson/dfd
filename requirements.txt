@@ -10,3 +10,4 @@ gco-wrapper
 pytest
 h5py
 tifffile
+cupy-cuda13x  # optional: GPU acceleration (use cupy-cuda11x for CUDA 11, cupy-cuda12x for CUDA 12, etc)

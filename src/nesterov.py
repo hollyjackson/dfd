@@ -95,7 +95,7 @@ def approx_Lipschitz_constant(A, A_T, iters=15):
         x = z / nz
 
     y = A.dot(x)
-    return xp.float32(xp.dot(y, y))  # Rayleigh quotient: x^T A^T A x ≈ ||A||²
+    return float(y.dot(y))  # Rayleigh quotient: x^T A^T A x ≈ ||A||²
 
 
 # ---------------------------------------------------------------------------

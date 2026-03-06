@@ -27,21 +27,21 @@ import backend
 
 def total_variation(image):
     """Calculate the total variation of an image."""
-    xp = backend.xp()
+    xp = backend.xp() if not isinstance(image, np.ndarray) else np
     tv_x = xp.abs(image[:, 1:] - image[:, :-1])  # Horizontal gradients
     tv_y = xp.abs(image[1:, :] - image[:-1, :])  # Vertical gradients
     return float(xp.sum(tv_x) + xp.sum(tv_y))
 
 def compute_RMS(pred, gt):
     """Compute Root Mean Square (RMS) error between predicted and ground truth depth."""
-    xp = backend.xp()
+    xp = backend.xp() if not isinstance(pred, np.ndarray) else np
     diff_sq = (pred - gt) ** 2
     return float(xp.sqrt(xp.mean(diff_sq)))
 
 
 def compute_AbsRel(pred, gt):
     """Compute absolute relative error. Calculates mean(|pred - gt| / gt) with epsilon for numerical stability."""
-    xp = backend.xp()
+    xp = backend.xp() if not isinstance(pred, np.ndarray) else np
     rel = xp.abs(pred - gt) / (gt + 1e-8)
     return float(xp.mean(rel))
 
@@ -52,7 +52,7 @@ def compute_accuracy_metrics(pred, gt):
     Returns δ1, δ2, δ3 metrics where:
     δ_k = fraction of pixels with max(pred/gt, gt/pred) < 1.25^k
     """
-    xp = backend.xp()
+    xp = backend.xp() if not isinstance(pred, np.ndarray) else np
     ratio = xp.maximum(pred / (gt + 1e-8), gt / (pred + 1e-8))
     delta1 = float(xp.mean(ratio < 1.25))
     delta2 = float(xp.mean(ratio < 1.25**2))

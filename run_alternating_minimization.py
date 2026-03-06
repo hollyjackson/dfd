@@ -265,6 +265,13 @@ def main():
         sharpness_measure=config.aif_sharpness_measure
     )
 
+    # Move data to GPU if backend is active
+    defocus_stack = backend.to_device(defocus_stack)
+    if gt_aif is not None:
+        gt_aif = backend.to_device(gt_aif)
+    if gt_dpt is not None:
+        gt_dpt = backend.to_device(gt_dpt)
+
     # Run coordinate descent optimization
     if verbose_mode:
         print("Running coordinate descent optimization...")
@@ -292,6 +299,10 @@ def main():
 
     dpt, aif, _, exp_folder = alternating_minimization.alternating_minimization(**cd_params)
 
+    # Move results to CPU for saving
+    dpt = backend.to_cpu(dpt)
+    aif = backend.to_cpu(aif)
+
     # Save final results
     if verbose_mode:
         print("Saving results...")
@@ -305,7 +316,7 @@ def main():
     if gt_dpt is not None:
         if verbose_mode:
             print("Computing accuracy metrics...")
-        save_accuracy_metrics(exp_folder, dpt, gt_dpt, verbose=verbose_mode)
+        save_accuracy_metrics(exp_folder, dpt, backend.to_cpu(gt_dpt), verbose=verbose_mode)
 
     if verbose_mode:
         print(f"Results saved to: {exp_folder}")

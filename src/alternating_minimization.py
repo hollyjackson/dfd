@@ -397,5 +397,5 @@ def alternating_minimization(
             print('--------------------------')
             print()
 
-    return backend.to_cpu(dpt), backend.to_cpu(aif), T_i, experiment_folder
+    return dpt, aif, T_i, experiment_folder
 

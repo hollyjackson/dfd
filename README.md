@@ -1,4 +1,6 @@
-# Depth from Defocus
+# Depth from Defocus (GPU)
+
+> **⚠️ This is the experimental GPU branch.** GPU acceleration via [CuPy](https://cupy.dev/) is untested and may contain bugs. Install CuPy for your CUDA version (e.g. `pip install cupy-cuda12x`) to enable GPU mode. The CPU codepath remains fully functional without CuPy installed.
 
 Joint estimation of depth maps and all-in-focus (AIF) images from focal stacks using alternating minimization.
 
