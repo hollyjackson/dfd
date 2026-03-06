@@ -15,6 +15,7 @@ import numpy as np
 import scipy
 import tqdm
 
+import backend
 import forward_model
 
 invphi = (math.sqrt(5) - 1) / 2  # 1 / phi
@@ -35,30 +36,31 @@ def windowed_mse_gss(depth_map, gt_aif, defocus_stack, dataset_params, max_kerne
     smoothing the loss landscape across spatially-neighboring depth values.
 
     Requires one full forward-model pass per offset — O(window_size²) total.
-    
+
     Not used in practice; prefer windowed_mse_grid for the grid-search path,
     where the forward pass is already precomputed.
     """
+    xp = backend.xp()
     rad = window_size // 2
     _, width, height, _ = defocus_stack.shape
 
-    losses = np.zeros((width, height), dtype=np.float32)
-    denom = np.zeros((width, height), dtype=np.float32)
+    losses = xp.zeros((width, height), dtype=xp.float32)
+    denom = xp.zeros((width, height), dtype=xp.float32)
     for i in range(-rad, rad+1):
-        x_shifted = np.roll(depth_map, shift=i, axis=0)
+        x_shifted = xp.roll(depth_map, shift=i, axis=0)
         for j in range(-rad, rad+1):
-            shifted = np.roll(x_shifted, shift=j, axis=1)
+            shifted = xp.roll(x_shifted, shift=j, axis=1)
             # compute mse
             pred = forward_model.forward(shifted, gt_aif, dataset_params, max_kernel_size,
                                          indices=indices, template_A_stack=template_A_stack)
-            mse = np.mean((defocus_stack - pred)**2, axis=(0, -1))
+            mse = xp.mean((defocus_stack - pred)**2, axis=(0, -1))
             i_start = -i if i < 0 else 0
             i_end = width-i if i > 0 else width
             j_start = -j if j < 0 else 0
             j_end = height-j if j > 0 else height
             losses[i_start:i_end, j_start:j_end] += mse[i_start+i:i_end+i, j_start+j:j_end+j]
             denom[i_start:i_end, j_start:j_end] += 1
-            
+
     return losses / denom
 
 def windowed_mse_grid(defocus_stack, pred, window_size):
@@ -68,13 +70,12 @@ def windowed_mse_grid(defocus_stack, pred, window_size):
     per-pixel MSE within a square window of side *window_size*,
     smoothing the loss landscape across neighboring pixels.
     """
+    xp = backend.xp()
     rad = window_size // 2
     _, width, height, _ = defocus_stack.shape
-    mse = np.mean((defocus_stack - pred)**2, axis=(0, -1))
-    losses = np.zeros((width, height), dtype=np.float32)
-    denom = np.zeros((width, height), dtype=np.float32)
-    row = np.arange(width)
-    col = np.arange(height)
+    mse = xp.mean((defocus_stack - pred)**2, axis=(0, -1))
+    losses = xp.zeros((width, height), dtype=xp.float32)
+    denom = xp.zeros((width, height), dtype=xp.float32)
     for i in range(-rad, rad+1):
         for j in range(-rad, rad+1):
             i_start = -i if i < 0 else 0
@@ -86,16 +87,18 @@ def windowed_mse_grid(defocus_stack, pred, window_size):
     return losses / denom
 
 def windowed_mse_grid_fast(defocus_stack, pred, window_size):
-    """Windowed MSE using scipy uniform_filter (faster alternative to windowed_mse_grid).
+    """Windowed MSE using uniform_filter (faster alternative to windowed_mse_grid).
 
-    Replaces the explicit accumulation loop with scipy.ndimage.uniform_filter,
+    Replaces the explicit accumulation loop with ndimage.uniform_filter,
     which applies a box-filter average over *window_size* pixels.
     Intended to be equivalent to windowed_mse_grid but has not yet been
     validated against it — use with caution.
     """
+    xp = backend.xp()
+    ndi = backend.ndimage_module()
     # TODO: verify output matches (especially boundary conditions)
-    mse = np.mean((defocus_stack - pred)**2, axis=(0, -1))
-    win_mean = scipy.ndimage.uniform_filter(mse, size=window_size, mode='nearest')
+    mse = xp.mean((defocus_stack - pred)**2, axis=(0, -1))
+    win_mean = ndi.uniform_filter(mse, size=window_size, mode='nearest')
     return win_mean
 
 # ---------------------------------------------------------------------------
@@ -144,7 +147,8 @@ def objective_full(dpt, aif, defocus_stack, dataset_params, max_kernel_size,
     ndarray, shape (W, H)
         Per-pixel reconstruction loss.
     """
-    grid_search = np.all(np.isclose(dpt, dpt[0][0]))
+    xp = backend.xp()
+    grid_search = bool(xp.all(xp.isclose(dpt, dpt[0][0])))
 
     if windowed:
         if grid_search:
@@ -160,7 +164,7 @@ def objective_full(dpt, aif, defocus_stack, dataset_params, max_kernel_size,
         if pred is None:
             pred = forward_model.forward(dpt, aif, dataset_params, max_kernel_size,
                                          indices=indices, template_A_stack=template_A_stack)
-        loss = np.mean((defocus_stack - pred)**2, axis=(0, -1))
+        loss = xp.mean((defocus_stack - pred)**2, axis=(0, -1))
     return loss
 
 
@@ -213,7 +217,10 @@ def grid_search(gt_aif, defocus_stack, dataset_params, max_kernel_size,
     all_losses : ndarray, shape (W, H, num_Z)
         Full per-pixel loss surface over the depth grid.
     """
-    Z = np.linspace(min_Z, max_Z, num_Z, dtype=np.float32)
+    xp = backend.xp()
+    ndi = backend.ndimage_module()
+
+    Z = xp.linspace(min_Z, max_Z, num_Z, dtype=xp.float32)
 
     width, height, num_channels = gt_aif.shape
     if indices is None:
@@ -221,23 +228,23 @@ def grid_search(gt_aif, defocus_stack, dataset_params, max_kernel_size,
     else:
         u, v, _, _, _ = indices
 
-    all_losses = np.zeros((width, height, num_Z), dtype=np.float32)
+    all_losses = xp.zeros((width, height, num_Z), dtype=xp.float32)
     for i in tqdm.tqdm(range(num_Z), desc="Grid search".ljust(20), ncols=80, disable=(not verbose)):
-        r = forward_model.computer(np.array([[Z[i]]], dtype=np.float32), dataset_params)[...,None,None]
+        r = forward_model.computer(xp.array([[Z[i]]], dtype=xp.float32), dataset_params)[...,None,None]
         G, _ = forward_model.computeG(r, u, v)
         G = G.squeeze()
-        defocus_stack_pred = np.zeros((G.shape[0], width, height, num_channels), dtype=np.float32)
+        defocus_stack_pred = xp.zeros((G.shape[0], width, height, num_channels), dtype=xp.float32)
         for j in range(G.shape[0]): # each focal setting
             kernel = G[j]
             for c in range(num_channels):
-                defocus_stack_pred[j,:,:,c] = scipy.ndimage.convolve(gt_aif[:,:,c], kernel, mode='constant')
+                defocus_stack_pred[j,:,:,c] = ndi.convolve(gt_aif[:,:,c], kernel, mode='constant')
 
-        dpt = np.ones((width, height), dtype=np.float32) * Z[i]
+        dpt = xp.ones((width, height), dtype=xp.float32) * Z[i]
         all_losses[:,:,i] = objective_full(dpt, gt_aif, defocus_stack, dataset_params, max_kernel_size,
                                            window_size=window_size, indices=indices,
                                            pred=defocus_stack_pred, windowed=windowed)
 
-    sorted_indices = np.argsort(all_losses, axis=2)
+    sorted_indices = xp.argsort(all_losses, axis=2)
     min_indices = sorted_indices[:,:,0]
     depth_maps = Z[min_indices]
 
@@ -308,6 +315,8 @@ def golden_section_search(Z, argmin_indices, gt_aif, defocus_stack,
     ndarray, shape (W, H)
         Refined per-pixel depth map.
     """
+    xp = backend.xp()
+
     _obj = lambda d: objective_full(
         d, gt_aif, defocus_stack, dataset_params, max_kernel_size,
         window_size=window_size, indices=indices,
@@ -320,8 +329,8 @@ def golden_section_search(Z, argmin_indices, gt_aif, defocus_stack,
     # build a grid around each min
     if a_b_init is None:
         num_Z = len(Z)
-        a = Z[np.maximum(argmin_indices-window,0)]
-        b = Z[np.minimum(argmin_indices+window,num_Z-1)]
+        a = Z[xp.maximum(argmin_indices-window,0)]
+        b = Z[xp.minimum(argmin_indices+window,num_Z-1)]
     else:
         a, b = a_b_init
 
@@ -335,37 +344,37 @@ def golden_section_search(Z, argmin_indices, gt_aif, defocus_stack,
     f_d = _obj(d)
 
     i = 0
-    while (((convergence_error == 0 and np.any(b - a > tolerance))
-            or (convergence_error != 0 and np.sum((b - a) > tolerance) / a.size > (1 - convergence_error)))
+    while (((convergence_error == 0 and bool(xp.any(b - a > tolerance)))
+            or (convergence_error != 0 and float(xp.sum((b - a) > tolerance)) / a.size > (1 - convergence_error)))
             and (i < max_iter)):
         # tie-safe implementation
         active = (b - a) > tolerance
         go_left = (f_c <= f_d) & active
         go_right = (~go_left) & active
 
-        if np.any(go_left):
+        if bool(xp.any(go_left)):
             b[go_left] = d[go_left]
             d[go_left] = c[go_left]
             f_d[go_left] = f_c[go_left]
             c[go_left] = b[go_left] - (b[go_left] - a[go_left]) * invphi
 
-        if np.any(go_right):
+        if bool(xp.any(go_right)):
             a[go_right] = c[go_right]
             c[go_right] = d[go_right]
             f_c[go_right] = f_d[go_right]
             d[go_right] = a[go_right] + (b[go_right] - a[go_right]) * invphi
 
-        if np.any(go_left):
+        if bool(xp.any(go_left)):
             f_c = _obj(c)
 
-        if np.any(go_right):
+        if bool(xp.any(go_right)):
             f_d = _obj(d)
 
         i += 1
 
     if (i >= max_iter) and verbose:
         print('Failed to converge after',i,'iterations')
-        print(np.sum((b - a) <= tolerance) / a.size * 100, '% convergence achieved')
+        print(float(xp.sum((b - a) <= tolerance)) / a.size * 100, '% convergence achieved')
 
     if verbose:
         print("...done")
@@ -375,6 +384,6 @@ def golden_section_search(Z, argmin_indices, gt_aif, defocus_stack,
     if last_dpt is not None:
         mse = _obj(dpt)
         last_mse = _obj(last_dpt)
-        dpt = np.where(mse <= last_mse, dpt, last_dpt)
+        dpt = xp.where(mse <= last_mse, dpt, last_dpt)
 
     return dpt

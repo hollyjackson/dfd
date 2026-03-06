@@ -13,6 +13,7 @@ neighbors within a window of radius MAX_KERNEL_SIZE // 2.
 import numpy as np
 import matplotlib.pyplot as plt
 
+import backend
 import utils
 
 
@@ -156,6 +157,10 @@ def remove_outliers(dpt, aif, neighborhood_size, patch_type='tv', diff_thresh=2,
     """
     assert patch_type in ['tv', 'constant']
     print("Removing outliers...")
+
+    # All work in this function uses Python loops / sets — run on CPU.
+    dpt = backend.to_cpu(dpt)
+    aif = backend.to_cpu(aif)
 
     depth_map = dpt.copy()
     width, height = depth_map.shape[:2]

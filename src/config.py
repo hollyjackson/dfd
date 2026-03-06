@@ -29,6 +29,9 @@ class BaseConfig:
     # Dataset directory
     data_dir: str = 'data'
 
+    # GPU acceleration
+    use_gpu: bool = False
+
     def get_experiment_name(self, example_name: str) -> str:
         """Generate experiment name from configuration."""
         raise NotImplementedError("Subclasses must implement get_experiment_name")

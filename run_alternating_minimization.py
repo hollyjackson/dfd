@@ -18,6 +18,7 @@ Options:
     --verbose      Verbose mode, prints configuration parameters and optimization steps
     --show_plots   Display plots plt.show() during optimization
     --save_plots   Save plots to experiment folder
+    --gpu          Enable GPU acceleration via CuPy (requires CuPy installed)
 
 Examples:
     python run_alternating_minimization.py nyuv2 test 0045
@@ -33,6 +34,7 @@ sys.path.insert(0, str(Path(__file__).parent / 'src'))
 import os
 import numpy as np
 
+import backend
 import utils
 import forward_model
 import alternating_minimization
@@ -179,6 +181,10 @@ def main():
     if save_plots:
         sys.argv.remove('--save_plots')
 
+    gpu_mode = '--gpu' in sys.argv
+    if gpu_mode:
+        sys.argv.remove('--gpu')
+
     dataset = sys.argv[1].lower()
 
     # Dataset-specific argument parsing and loading
@@ -238,6 +244,11 @@ def main():
         print(f"Unknown dataset: {dataset}")
         print("Supported datasets: make3d, mobiledepth, nyuv2")
         sys.exit(1)
+
+    # Activate GPU backend if requested
+    backend.set_backend(gpu_mode or config.use_gpu)
+    if (gpu_mode or config.use_gpu) and verbose_mode:
+        print("GPU mode enabled (CuPy backend)")
 
     # Print configuration and dataset parameters if verbose
     if verbose_mode:

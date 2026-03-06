@@ -18,6 +18,8 @@ forward             -- apply the full forward model: AIF + depth -> defocus stac
 import numpy as np
 import scipy
 
+import backend
+
 
 # ---------------------------------------------------------------------------
 # Kernel geometry helpers
@@ -37,11 +39,12 @@ def compute_u_v(max_kernel_size):
         Row and column offset coordinates over the K×K kernel window,
         broadcast-ready for per-pixel kernel evaluation.
     """
+    xp = backend.xp()
     lim = max_kernel_size // 2
 
-    us = np.linspace(-lim, lim, max_kernel_size, dtype=np.float32)
-    vs = np.linspace(-lim, lim, max_kernel_size, dtype=np.float32)
-    grid_u, grid_v = np.meshgrid(us, vs, indexing='ij')
+    us = xp.linspace(-lim, lim, max_kernel_size, dtype=xp.float32)
+    vs = xp.linspace(-lim, lim, max_kernel_size, dtype=xp.float32)
+    grid_u, grid_v = xp.meshgrid(us, vs, indexing='ij')
     u = grid_u[None, None, None, ...]
     v = grid_v[None, None, None, ...]
 
@@ -54,6 +57,8 @@ def compute_shifted_indices(width, height, max_kernel_size):
     For each pixel (i, j) and each kernel offset (di, dj) within the
     K×K window, stores the absolute row and column index of the
     corresponding neighbor.
+
+    Always computed on CPU (feeds into CSR construction).
 
     Parameters
     ----------
@@ -88,6 +93,8 @@ def compute_shifted_indices(width, height, max_kernel_size):
 def generate_mask(row_indices, col_indices, width, height):
     """Return a boolean mask that removes out-of-bounds kernel entries.
 
+    Always computed on CPU (feeds into CSR construction).
+
     Parameters
     ----------
     row_indices, col_indices : ndarray, shape (width, height, K, K)
@@ -113,6 +120,8 @@ def generate_mask(row_indices, col_indices, width, height):
 
 def compute_mask_flattened_indices(row_indices, col_indices, mask, width, height, max_kernel_size):
     """Convert 2-D neighbor indices to flat CSR (row, col) index arrays.
+
+    Always computed on CPU (feeds into CSR construction).
 
     Parameters
     ----------
@@ -152,6 +161,11 @@ def precompute_indices(width, height, max_kernel_size):
     (and should!) be cached and reused for any depth map of the same spatial
     dimensions.
 
+    Index computation (shifted indices, mask, row/col) is done on CPU since
+    it feeds into CSR construction.  ``u, v`` are created on the active
+    device.  The ``mask`` is transferred to the active device since it is
+    used for repeated indexing in ``buildA``.
+
     Parameters
     ----------
     width, height : int
@@ -162,16 +176,19 @@ def precompute_indices(width, height, max_kernel_size):
     Returns
     -------
     u, v : ndarray
-        Kernel coordinate grids (see ``compute_u_v``).
-    row, col : ndarray of int
+        Kernel coordinate grids (see ``compute_u_v``), on active device.
+    row, col : ndarray of int (CPU)
         Flat CSR index arrays (see ``compute_mask_flattened_indices``).
     mask : ndarray of bool
-        Boundary mask (see ``generate_mask``).
+        Boundary mask (see ``generate_mask``), on active device.
     """
     u, v = compute_u_v(max_kernel_size)
     row_indices, col_indices = compute_shifted_indices(width, height, max_kernel_size)
-    mask = generate_mask(row_indices, col_indices, width, height)
-    row, col = compute_mask_flattened_indices(row_indices, col_indices, mask, width, height, max_kernel_size)
+    mask_cpu = generate_mask(row_indices, col_indices, width, height)
+    row, col = compute_mask_flattened_indices(row_indices, col_indices, mask_cpu, width, height, max_kernel_size)
+
+    # mask goes to active device (used for repeated GPU indexing in buildA)
+    mask = backend.to_device(mask_cpu)
 
     return u, v, row, col, mask
 
@@ -203,19 +220,19 @@ def computer(dpt, dataset_params):
     r : ndarray, shape (width, height, fs)
         Blur radius in pixels for every pixel and focal plane.
     """
+    xp = backend.xp()
     Zf = dataset_params.Zf
-    # format focus setting
-    if not isinstance(Zf, np.ndarray):
-        Zf = Zf.numpy().astype(np.float32)
+    # format focus setting -- ensure on current device
+    Zf = xp.asarray(Zf, dtype=xp.float32)
     Zf_expanded = Zf.reshape(1, 1, -1)
     # compute CoC
     CoC = ((dataset_params.D)
-        * (np.abs(dpt[..., None] - Zf_expanded) / (dpt[..., None] + 1e-8))
+        * (xp.abs(dpt[..., None] - Zf_expanded) / (dpt[..., None] + 1e-8))
         * (dataset_params.f / (Zf_expanded - dataset_params.f)))
     r = CoC / 2. / dataset_params.ps
 
     # threshold
-    r[np.where(r < dataset_params.thresh)] = dataset_params.thresh
+    r = xp.maximum(r, dataset_params.thresh)
 
     return r
 
@@ -237,12 +254,13 @@ def computeG(r, u, v, eps=1e-8):
     norm : ndarray
         Per-kernel normalization factors (sum before division).
     """
+    xp = backend.xp()
     # compute Gaussian kernels
-    G = np.exp(-(u**2 + v**2) / (2 * (r+eps)**2))
-    # G = ((u**2 + v**2) <= r**2).astype(np.float32) # disc
+    G = xp.exp(-(u**2 + v**2) / (2 * (r+eps)**2))
+    # G = ((u**2 + v**2) <= r**2).astype(xp.float32) # disc
 
     # normalize gaussian kernels
-    norm = np.sum(G, axis=(-2, -1), keepdims=True, dtype=np.float32)
+    norm = xp.sum(G, axis=(-2, -1), keepdims=True, dtype=xp.float32)
     G /= (norm + eps)
 
     return G, norm
@@ -279,6 +297,10 @@ def build_fixed_pattern_csr(width, height, fs, row, col, data, dtype=np.float32)
     triplets when only the ``data`` values change (see ``buildA`` with a
     ``template_A_stack``).
 
+    CSR construction always happens on CPU (lexsort, cumsum for indptr).
+    If GPU mode is active, the final matrices and sort order are transferred
+    to the GPU once (this function is called once at pipeline start).
+
     Parameters
     ----------
     width, height : int
@@ -294,7 +316,7 @@ def build_fixed_pattern_csr(width, height, fs, row, col, data, dtype=np.float32)
 
     Returns
     -------
-    A_stack : list of scipy.sparse.csr_matrix, length fs
+    A_stack : list of sparse csr_matrix, length fs
     order : ndarray of int
         Permutation that sorts ``(row, col)`` into CSR order; needed to
         update ``A.data`` in place when reusing the template.
@@ -312,12 +334,18 @@ def build_fixed_pattern_csr(width, height, fs, row, col, data, dtype=np.float32)
     np.cumsum(indptr, out=indptr)
     indices = col_sorted.astype(np.int32, copy=False)
 
-    # build matrices
+    # build matrices on CPU
     A_stack = []
     for idx in range(fs):
         A = scipy.sparse.csr_matrix((data, indices, indptr),
                 shape=(width*height, width*height), dtype=data.dtype, copy=False)
         A_stack.append(A)
+
+    # one-time transfer to GPU if active
+    if backend.get_backend():
+        sp = backend.sparse_module()
+        A_stack = [sp.csr_matrix(A) for A in A_stack]
+        order = backend.to_device(order)
 
     return A_stack, order
 
@@ -361,14 +389,21 @@ def buildA(dpt, u, v, row, col, mask, dataset_params, template_A_stack=None):
     for idx in range(fs):
         data = G[:, :, idx, :, :]
         data = data.flatten()
-        data = data[mask]
+        data = data[mask]  # mask is on same device as G
 
         if template_A_stack is None:
             # warning -- this is > 3x slower
-            A = scipy.sparse.csr_matrix((data, (row, col)),
-                shape=(width*height, width*height), dtype=data.dtype)
+            data_cpu = backend.to_cpu(data)
+            row_cpu = np.asarray(row)
+            col_cpu = np.asarray(col)
+            A = scipy.sparse.csr_matrix((data_cpu, (row_cpu, col_cpu)),
+                shape=(width*height, width*height), dtype=data_cpu.dtype)
+            if backend.get_backend():
+                sp = backend.sparse_module()
+                A = sp.csr_matrix(A)
             A_stack.append(A)
         else:
+            # template path: works on both CPU (scipy) and GPU (cupyx)
             A = A_stack_cache[idx].copy()
             A.data[:] = data[order]
             A_stack.append(A)
@@ -408,6 +443,7 @@ def forward(dpt, aif, dataset_params, max_kernel_size, indices=None, template_A_
     defocus_stack : ndarray, shape (fs, width, height, 3)
         Simulated defocus stack.
     """
+    xp = backend.xp()
     width, height = dpt.shape
 
     if indices is None:
@@ -430,10 +466,10 @@ def forward(dpt, aif, dataset_params, max_kernel_size, indices=None, template_A_
         b_red = A @ aif_red
         b_green = A @ aif_green
         b_blue = A @ aif_blue
-        b = np.column_stack((b_red, b_green, b_blue))
+        b = xp.column_stack((b_red, b_green, b_blue))
 
         b = b.reshape((width, height, 3))
 
         defocus_stack.append(b)
 
-    return np.stack(defocus_stack, 0)
+    return xp.stack(defocus_stack, 0)

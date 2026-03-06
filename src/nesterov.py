@@ -13,12 +13,15 @@ Nesterov momentum is used for acceleration.  The step size is set to 1/L where
 L ≈ ||A||² is estimated via power iteration.
 """
 
+import math
+
 import numpy as np
 import scipy
 
 from PIL import Image
 import tqdm
 
+import backend
 import forward_model
 
 
@@ -78,20 +81,21 @@ def approx_Lipschitz_constant(A, A_T, iters=15):
     float32
         Approximate largest eigenvalue of A^T A, i.e. ||A||².
     """
+    xp = backend.xp()
     n = A.shape[1]
-    x = np.random.standard_normal(n).astype(np.float32, copy=False)
-    x /= (np.linalg.norm(x) + 1e-8)
+    x = xp.random.standard_normal(n).astype(xp.float32, copy=False)
+    x /= (xp.linalg.norm(x) + 1e-8)
 
     for _ in range(iters):
         y = A.dot(x)
         z = A_T.dot(y)
-        nz = np.linalg.norm(z)
+        nz = xp.linalg.norm(z)
         if nz == 0:
             return 1.0
         x = z / nz
 
     y = A.dot(x)
-    return np.float32(np.dot(y, y))  # Rayleigh quotient: x^T A^T A x ≈ ||A||²
+    return xp.float32(xp.dot(y, y))  # Rayleigh quotient: x^T A^T A x ≈ ||A||²
 
 
 # ---------------------------------------------------------------------------
@@ -131,6 +135,9 @@ def bounded_fista_3d(dpt, defocus_stack, dataset_params, max_kernel_size,
     aif : ndarray, shape (W, H, 3)
         Reconstructed all-in-focus image, clipped to [0, IMAGE_RANGE].
     """
+    xp = backend.xp()
+    sp = backend.sparse_module()
+
     if verbose:
         print('Bounded FISTA...')
 
@@ -146,20 +153,20 @@ def bounded_fista_3d(dpt, defocus_stack, dataset_params, max_kernel_size,
     b_red_stack, b_green_stack, b_blue_stack = buildb(defocus_stack)
 
     IMAGE_RANGE = 255.  # default assumes [0-255] range
-    if defocus_stack.max() <= 1.5:  # check if images are normalized to [0-1]
+    if float(defocus_stack.max()) <= 1.5:  # check if images are normalized to [0-1]
         IMAGE_RANGE = 1.
 
     # Stack all focal images into one tall sparse system A x = b
-    A = scipy.sparse.vstack(A_stack).tocsr(copy=False)
+    A = sp.vstack(A_stack, format='csr')
     A.sort_indices()  # sorting indices speeds up repeated sparse mat-vec products
-    assert A.dtype == np.float32, "float64 promotion would seriously slow down sparse mat-vec throughput"
+    assert A.dtype == xp.float32, "float64 promotion would seriously slow down sparse mat-vec throughput"
 
     A_T = A.T
 
-    b_red = np.concatenate(b_red_stack)
-    b_green = np.concatenate(b_green_stack)
-    b_blue = np.concatenate(b_blue_stack)
-    b = np.stack([b_red, b_green, b_blue], axis=1).astype(np.float32, copy=False)
+    b_red = xp.concatenate(b_red_stack)
+    b_green = xp.concatenate(b_green_stack)
+    b_blue = xp.concatenate(b_blue_stack)
+    b = xp.stack([b_red, b_green, b_blue], axis=1).astype(xp.float32, copy=False)
 
     # Step size = 1/L where L = ||A||² (Lipschitz constant of the gradient).
     # approx_Lipschitz_constant uses power iteration and is much faster for large A;
@@ -169,14 +176,14 @@ def bounded_fista_3d(dpt, defocus_stack, dataset_params, max_kernel_size,
     eta = 1.0 / L
 
     # Initialise primal variable aif (x) and momentum auxiliary variable aif_guess (y)
-    aif = np.zeros((width * height, 3), dtype=np.float32)
+    aif = xp.zeros((width * height, 3), dtype=xp.float32)
     aif_guess = aif.copy()
 
     # Pre-compute A * y for the first iteration (updated at end of each loop)
     Ay0 = A.dot(aif_guess[:, 0])
     Ay1 = A.dot(aif_guess[:, 1])
     Ay2 = A.dot(aif_guess[:, 2])
-    Ay = np.column_stack((Ay0, Ay1, Ay2))
+    Ay = xp.column_stack((Ay0, Ay1, Ay2))
 
     t = 1.0  # FISTA momentum sequence parameter
 
@@ -187,17 +194,17 @@ def bounded_fista_3d(dpt, defocus_stack, dataset_params, max_kernel_size,
         g0 = A_T.dot(r[:, 0])
         g1 = A_T.dot(r[:, 1])
         g2 = A_T.dot(r[:, 2])
-        grad = np.column_stack((g0, g1, g2))
+        grad = xp.column_stack((g0, g1, g2))
 
         # Projected gradient step: gradient descent followed by projection onto [0, IMAGE_RANGE]
-        aif_new = np.clip(aif_guess - eta * grad, 0, IMAGE_RANGE)
+        aif_new = xp.clip(aif_guess - eta * grad, 0, IMAGE_RANGE)
 
         # FISTA momentum update: t_{k+1} = (1 + sqrt(1 + 4 t_k²)) / 2
-        t_new = (1 + np.sqrt(1 + 4 * t**2)) / 2
+        t_new = (1 + math.sqrt(1 + 4 * t**2)) / 2
         aif_guess = aif_new + ((t - 1) / t_new) * (aif_new - aif)
 
         # Convergence check on the primal update
-        if np.linalg.norm(aif_new - aif) < tol:
+        if xp.linalg.norm(aif_new - aif) < tol:
             if verbose:
                 print('Achieved tolerance')
             break
@@ -209,9 +216,9 @@ def bounded_fista_3d(dpt, defocus_stack, dataset_params, max_kernel_size,
         Ay0 = A.dot(aif_guess[:, 0])
         Ay1 = A.dot(aif_guess[:, 1])
         Ay2 = A.dot(aif_guess[:, 2])
-        Ay = np.column_stack((Ay0, Ay1, Ay2))
+        Ay = xp.column_stack((Ay0, Ay1, Ay2))
 
     if verbose:
-        print('r1norm', np.linalg.norm(r), 'norm(x)', np.linalg.norm(aif))
+        print('r1norm', float(xp.linalg.norm(r)), 'norm(x)', float(xp.linalg.norm(aif)))
 
     return aif.reshape((width, height, 3))

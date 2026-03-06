@@ -18,6 +18,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 import skimage
 
+import backend
+
 
 # ============================================================================
 # Mathematical/Statistical Functions
@@ -25,20 +27,23 @@ import skimage
 
 def total_variation(image):
     """Calculate the total variation of an image."""
-    tv_x = np.abs(image[:, 1:] - image[:, :-1])  # Horizontal gradients
-    tv_y = np.abs(image[1:, :] - image[:-1, :])  # Vertical gradients
-    return np.sum(tv_x) + np.sum(tv_y)
+    xp = backend.xp()
+    tv_x = xp.abs(image[:, 1:] - image[:, :-1])  # Horizontal gradients
+    tv_y = xp.abs(image[1:, :] - image[:-1, :])  # Vertical gradients
+    return float(xp.sum(tv_x) + xp.sum(tv_y))
 
 def compute_RMS(pred, gt):
     """Compute Root Mean Square (RMS) error between predicted and ground truth depth."""
+    xp = backend.xp()
     diff_sq = (pred - gt) ** 2
-    return np.sqrt(np.mean(diff_sq))
+    return float(xp.sqrt(xp.mean(diff_sq)))
 
 
 def compute_AbsRel(pred, gt):
     """Compute absolute relative error. Calculates mean(|pred - gt| / gt) with epsilon for numerical stability."""
-    rel = np.abs(pred - gt) / (gt + 1e-8)
-    return np.mean(rel)
+    xp = backend.xp()
+    rel = xp.abs(pred - gt) / (gt + 1e-8)
+    return float(xp.mean(rel))
 
 
 def compute_accuracy_metrics(pred, gt):
@@ -47,10 +52,11 @@ def compute_accuracy_metrics(pred, gt):
     Returns δ1, δ2, δ3 metrics where:
     δ_k = fraction of pixels with max(pred/gt, gt/pred) < 1.25^k
     """
-    ratio = np.maximum(pred / (gt + 1e-8), gt / (pred + 1e-8))
-    delta1 = np.mean(ratio < 1.25)
-    delta2 = np.mean(ratio < 1.25**2)
-    delta3 = np.mean(ratio < 1.25**3)
+    xp = backend.xp()
+    ratio = xp.maximum(pred / (gt + 1e-8), gt / (pred + 1e-8))
+    delta1 = float(xp.mean(ratio < 1.25))
+    delta2 = float(xp.mean(ratio < 1.25**2))
+    delta3 = float(xp.mean(ratio < 1.25**3))
 
     return {"delta1": delta1, "delta2": delta2, "delta3": delta3}
 

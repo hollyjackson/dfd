@@ -43,7 +43,7 @@ def compute_pixel_sharpness(image):
 
     # Sharpness combines gradient magnitude with normalized intensity deviation
     # from Si et al. (2023)
-    sharpness = (grad_x**2 + grad_y**2) - np.abs((grey_image - mu) / mu) - np.pow(grey_image - mu, 2)
+    sharpness = (grad_x**2 + grad_y**2) - np.abs((grey_image - mu) / mu) - (grey_image - mu) ** 2
 
     return sharpness
 

@@ -15,6 +15,7 @@ import time
 import matplotlib.pyplot as plt
 import numpy as np
 
+import backend
 import forward_model
 import initialization
 import nesterov
@@ -23,7 +24,8 @@ import utils
 
 def mse_loss(pred, gt):
     """Mean squared error between pred and gt."""
-    return np.mean((gt - pred)**2)
+    xp = backend.xp()
+    return float(xp.mean((gt - pred)**2))
 
 
 def alternating_minimization(
@@ -128,7 +130,7 @@ def alternating_minimization(
 
     # Auto-detect image intensity range for proper normalization
     IMAGE_RANGE = 255.  # default assumes [0-255] range
-    if defocus_stack.max() <= 1.5:  # check if images are normalized to [0-1]
+    if float(defocus_stack.max()) <= 1.5:  # check if images are normalized to [0-1]
         IMAGE_RANGE = 1.
         if verbose:
             print('Images in range [0-1]')
@@ -155,7 +157,7 @@ def alternating_minimization(
         aif = nesterov.bounded_fista_3d(dpt, defocus_stack, dataset_params, max_kernel_size, indices=indices, template_A_stack=template_A_stack, maxiter=T_i, verbose=verbose)
         if verbose:
             print('FISTA duration', time.time()-t0)
-            print('\nAIF result range: [',aif.min(), ',', aif.max(),']')
+            print('\nAIF result range: [',float(aif.min()), ',', float(aif.max()),']')
 
         # Compute MSE between observed focal stack and synthesized stack
         # from current AIF and depth estimates via the forward model
@@ -167,7 +169,7 @@ def alternating_minimization(
 
         # Visualize the reconstructed all-in-focus image (normalized to [0,1] for display)
         if save_plots or show_plots:
-            plt.imshow(aif / IMAGE_RANGE)
+            plt.imshow(backend.to_cpu(aif / IMAGE_RANGE))
             if save_plots:
                 assert iter_folder is not None
                 plt.savefig(os.path.join(iter_folder,'bounded_fista_'+str(i)+'.png'))
@@ -197,7 +199,7 @@ def alternating_minimization(
 
         # Visualize the coarse depth estimates from grid search
         if save_plots or show_plots:
-            plt.imshow(depth_map, vmin=vmin, vmax=vmax)
+            plt.imshow(backend.to_cpu(depth_map), vmin=vmin, vmax=vmax)
             plt.colorbar()
             if save_plots:
                 assert iter_folder is not None
@@ -220,7 +222,7 @@ def alternating_minimization(
 
         # Visualize the refined depth map with consistent color scale across iterations
         if save_plots or show_plots:
-            plt.imshow(depth_map_golden, vmin=vmin, vmax=vmax)
+            plt.imshow(backend.to_cpu(depth_map_golden), vmin=vmin, vmax=vmax)
             plt.colorbar()
             if save_plots:
                 plt.savefig(os.path.join(iter_folder,'golden_section_search_'+str(i)+'.png'))
@@ -240,7 +242,7 @@ def alternating_minimization(
         if verbose:
             # TV (total variation) measures depth map smoothness - helps detect noisy regions
             print('Loss:',loss,', TV:',utils.total_variation(dpt))
-            print('\nDPT result range: [',dpt.min(), ',', dpt.max(),']')
+            print('\nDPT result range: [',float(dpt.min()), ',', float(dpt.max()),']')
 
 
         if verbose:
@@ -270,6 +272,7 @@ def alternating_minimization(
     # Initialize all-in-focus image (aif): (nesterov_first=False)
     # Use sharpness-based fusion (based on AIF stitching from Suwajanakorn et al.)
     # to fuse the sharpest regions from each focal plane.
+    # Initialization runs entirely on CPU (uses cv2, gco).
     if not nesterov_first:
         if aif_init is None:
             if verbose:
@@ -290,6 +293,14 @@ def alternating_minimization(
             plt.imshow(aif / IMAGE_RANGE)
             plt.title('AIF Initialization')
             plt.show()
+
+    # ---- One-time transfer to GPU (if active) ----
+    # Done after initialization so CPU-only init code doesn't need transfers.
+    defocus_stack = backend.to_device(defocus_stack)
+    if aif is not None:
+        aif = backend.to_device(aif)
+    if dpt is not None:
+        dpt = backend.to_device(dpt)
 
     # ============================================================================
     # MAIN ALTERNATING MINIMIZATION LOOP
@@ -331,11 +342,11 @@ def alternating_minimization(
 
         # Save intermediate depth maps and AIF images for visualization and debugging
         if save_plots:
-            utils.save_dpt(iter_folder, 'dpt_'+str(i), dpt)
-            utils.save_aif(iter_folder, 'aif_'+str(i), aif / IMAGE_RANGE)
+            utils.save_dpt(iter_folder, 'dpt_'+str(i), backend.to_cpu(dpt))
+            utils.save_aif(iter_folder, 'aif_'+str(i), backend.to_cpu(aif / IMAGE_RANGE))
 
         # Store current depth estimate
-        last_dpt = np.copy(dpt)
+        last_dpt = dpt.copy()
 
         # Update FISTA iteration budget (if alpha is provided)
         if alpha is not None:
@@ -386,5 +397,5 @@ def alternating_minimization(
             print('--------------------------')
             print()
 
-    return dpt, aif, T_i, experiment_folder
+    return backend.to_cpu(dpt), backend.to_cpu(aif), T_i, experiment_folder
 
